@@ -12,9 +12,10 @@ import {
 import { Dropdown, DropdownItem } from "../ui/Dropdown";
 import { ProgressBar } from "../ui/ProgressBar";
 import { formatBytes } from "../../assets/assets";
+import { useDrive } from "../../hooks/useDrive";
 
 const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
-  const isUploading = false;
+  const { isUploading, uploadFiles } = useDrive();
 
   const { user, currentFolderId } = useApp();
   const location = useLocation();
@@ -26,6 +27,13 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
     100,
     Math.round((storage_used / storage_limit) * 100),
   );
+
+  const handleFileSelect = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      uploadFiles(e.target.files, currentFolderId);
+      e.target.value = "";
+    }
+  };
 
   const navItems = [
     { label: "My Drive", path: "/", icon: HardDriveIcon },
@@ -60,7 +68,13 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
 
         {/* Upload CTA Dropdown */}
         <div className="p-4">
-          <input type="file" ref={fileInputRef} multiple className="hidden" />
+          <input
+            type="file"
+            ref={fileInputRef}
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
 
           <Dropdown
             trigger={

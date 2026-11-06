@@ -12,7 +12,7 @@ const DashboardLayout = () => {
       {/* Sidebar */}
       <Sidebar
         isMobileOpen={isMobileOpen}
-        setIsMobileOpen={setIsCreateFolderOpen}
+        setIsMobileOpen={setIsMobileOpen}
         onCreateFolderClick={() => setIsCreateFolderOpen(true)}
       />
 

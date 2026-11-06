@@ -26,7 +26,7 @@ export const AppProvider = ({ children }) => {
   const [currentFolderId, setCurrentFolderId] = useState(null);
   const [breadsCrumbs, setBreadCrumbs] = useState(ROOT_BREADCRUMB);
   const [folders, setFolders] = useState([]);
-  const [filse, setFiles] = useState([]);
+  const [files, setFiles] = useState([]);
   const [isDriveLoading, setIsDriveLoading] = useState(false);
 
   // Filter & sort State
@@ -89,7 +89,7 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const fetchDriveContent = useCallback(() => {
+  const fetchDriveContent = useCallback(
     async (folderId = currentFolderId, search = searchQuery, sort = sortBy) => {
       if (!user) return;
       setIsDriveLoading(true);
@@ -103,16 +103,17 @@ export const AppProvider = ({ children }) => {
           folderId ? api.get(`/api/folders/${folderId}`) : null,
         ]);
 
-        setFolders(folderRes.data.folders);
-        setFiles(fileRes.data.filse);
+        setFolders(folderRes.data.folders || []);
+        setFiles(fileRes?.data?.files || fileRes?.data?.filse || []);
         setBreadCrumbs(detailRes?.data?.breadsCrumbs || ROOT_BREADCRUMB);
       } catch {
         toast.error("Error loading drive contents");
       } finally {
         setIsDriveLoading(false);
       }
-    };
-  }, [user, currentFolderId, searchQuery, sortBy]);
+    },
+    [user, currentFolderId, searchQuery, sortBy],
+  );
 
   const value = {
     user,
@@ -132,7 +133,7 @@ export const AppProvider = ({ children }) => {
     breadsCrumbs,
     folders,
     setFolders,
-    filse,
+    files,
     setFiles,
     isDriveLoading,
     fetchDriveContent,
