@@ -17,16 +17,17 @@ import { formatBytes } from "../../assets/assets";
 import { useDrive } from "../../hooks/useDrive";
 
 const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
-<<<<<<< HEAD
-  const { isUploading, uploadFiles } = useDrive();
 
-  const { user, currentFolderId } = useApp();
-=======
+  const { isUploading, uploadFiles } = useDrive();
   const {
-    user, currentFolderId, isUploading, SetIsUploading,
-    SetUploadeProgress, setFiles, refreshUser,
+    user,
+    currentFolderId,
+    SetIsUploading,
+    SetUploadeProgress,
+    setFiles,
+    refreshUser,
   } = useApp();
->>>>>>> 49fd2c12d8b1fa73a53dc73ab9b2e2ac6ecc3c82
+
   const location = useLocation();
   const fileInputRef = useRef(null);
 
@@ -106,17 +107,7 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
 
         {/* Upload CTA Dropdown */}
         <div className="p-4">
-<<<<<<< HEAD
-          <input
-            type="file"
-            ref={fileInputRef}
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-=======
-          <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileChange} disabled={isUploading} />
->>>>>>> 49fd2c12d8b1fa73a53dc73ab9b2e2ac6ecc3c82
+
 
           <Dropdown
             trigger={

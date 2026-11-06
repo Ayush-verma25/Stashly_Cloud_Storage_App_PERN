@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import toast from "react-hot-toast";
@@ -28,6 +29,7 @@ export const AppProvider = ({ children }) => {
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
   const [isDriveLoading, setIsDriveLoading] = useState(false);
+  const driveRequestId = useRef(0);
 
   // Filter & sort State
   const [searchQuery, setSearchQuery] = useState("");
@@ -92,6 +94,7 @@ export const AppProvider = ({ children }) => {
   const fetchDriveContent = useCallback(
     async (folderId = currentFolderId, search = searchQuery, sort = sortBy) => {
       if (!user) return;
+      const requestId = ++driveRequestId.current;
       setIsDriveLoading(true);
       try {
         const parentParam = folderId || "null";
@@ -102,6 +105,8 @@ export const AppProvider = ({ children }) => {
           }),
           folderId ? api.get(`/api/folders/${folderId}`) : null,
         ]);
+
+        if (requestId !== driveRequestId.current) return;
 
         setFolders(folderRes.data.folders || []);
         setFiles(fileRes?.data?.files || fileRes?.data?.filse || []);
@@ -115,9 +120,13 @@ export const AppProvider = ({ children }) => {
             : ROOT_BREADCRUMB,
         );
       } catch {
-        toast.error("Error loading drive contents");
+        if (requestId === driveRequestId.current) {
+          toast.error("Error loading drive contents");
+        }
       } finally {
-        setIsDriveLoading(false);
+        if (requestId === driveRequestId.current) {
+          setIsDriveLoading(false);
+        }
       }
     },
     [user, currentFolderId, searchQuery, sortBy],
