@@ -102,7 +102,7 @@ export function useDrive() {
       : { target_folder: targetFolderId };
     const id = item.id || item;
     return runAction(
-      api.patch(`/api/${endpoint}/${id}/move.`, payload),
+      api.patch(`/api/${endpoint}/${id}/move`, payload),
       `${isFolder ? "Folder" : "File"} moved.`,
       "Error moving item.",
       () => fetchDriveContent(),
