@@ -25,7 +25,7 @@ export function useDrive() {
       if (afterSuccess) await afterSuccess(res?.data);
       return true;
     } catch (err) {
-      toast.error(ree.response?.data?.error || errorMsg);
+      toast.error(err?.response?.data?.error || errorMsg);
       return false;
     }
   };
