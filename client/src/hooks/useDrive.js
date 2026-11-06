@@ -12,9 +12,9 @@ export function useDrive() {
     refreshUser,
     currentFolderId,
     isUploading,
-    setIsUploading,
+    SetIsUploading: setIsUploading,
     uploadProgress,
-    setUploadProgress,
+    SetUploadeProgress: setUploadProgress,
   } = useApp();
 
   // Reusable API  action runner with standerd toast & callback
