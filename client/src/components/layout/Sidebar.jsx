@@ -1,4 +1,6 @@
 import React, { useRef } from "react";
+import api from "../../config/api";
+import toast from "react-hot-toast";
 import { useApp } from "../../context/AppContext";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -15,11 +17,47 @@ import { formatBytes } from "../../assets/assets";
 import { useDrive } from "../../hooks/useDrive";
 
 const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
+<<<<<<< HEAD
   const { isUploading, uploadFiles } = useDrive();
 
   const { user, currentFolderId } = useApp();
+=======
+  const {
+    user, currentFolderId, isUploading, SetIsUploading,
+    SetUploadeProgress, setFiles, refreshUser,
+  } = useApp();
+>>>>>>> 49fd2c12d8b1fa73a53dc73ab9b2e2ac6ecc3c82
   const location = useLocation();
   const fileInputRef = useRef(null);
+
+  const handleFileChange = async (event) => {
+    const input = event.target;
+    const files = Array.from(input.files || []);
+    input.value = "";
+    if (!files.length || isUploading) return;
+
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    if (currentFolderId) formData.append("folder_id", currentFolderId);
+
+    SetIsUploading(true);
+    SetUploadeProgress(0);
+    try {
+      const { data } = await api.post("/api/files/upload", formData, {
+        onUploadProgress: ({ loaded, total }) => {
+          if (total) SetUploadeProgress(Math.round((loaded / total) * 100));
+        },
+      });
+      setFiles((existingFiles) => [...data.files, ...existingFiles]);
+      await refreshUser();
+      toast.success("Files uploaded successfully");
+    } catch (error) {
+      toast.error(error.response?.data?.error || "Error uploading files");
+    } finally {
+      SetIsUploading(false);
+      SetUploadeProgress(0);
+    }
+  };
 
   const storage_used = Number(user?.storage_used ?? 0);
   const storage_limit = Number(user?.storage_limit ?? 1073741824); // 1GB
@@ -68,6 +106,7 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
 
         {/* Upload CTA Dropdown */}
         <div className="p-4">
+<<<<<<< HEAD
           <input
             type="file"
             ref={fileInputRef}
@@ -75,6 +114,9 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
             className="hidden"
             onChange={handleFileSelect}
           />
+=======
+          <input type="file" ref={fileInputRef} multiple className="hidden" onChange={handleFileChange} disabled={isUploading} />
+>>>>>>> 49fd2c12d8b1fa73a53dc73ab9b2e2ac6ecc3c82
 
           <Dropdown
             trigger={
