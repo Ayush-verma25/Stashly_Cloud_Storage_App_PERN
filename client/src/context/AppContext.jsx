@@ -105,7 +105,15 @@ export const AppProvider = ({ children }) => {
 
         setFolders(folderRes.data.folders || []);
         setFiles(fileRes?.data?.files || fileRes?.data?.filse || []);
-        setBreadCrumbs(detailRes?.data?.breadsCrumbs || ROOT_BREADCRUMB);
+        setBreadCrumbs(
+          detailRes?.data?.folder
+            ? [
+                ...ROOT_BREADCRUMB,
+                ...(detailRes.data.breadcrumbs || []),
+                { id: detailRes.data.folder.id, name: detailRes.data.folder.name },
+              ]
+            : ROOT_BREADCRUMB,
+        );
       } catch {
         toast.error("Error loading drive contents");
       } finally {
