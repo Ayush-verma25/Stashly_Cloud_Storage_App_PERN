@@ -14,6 +14,7 @@ const FilePreview = ({ file, onClose }) => {
     let isMounted = true;
     setIsLoading(true);
     setError(null);
+    setPreviewUrl(null);
 
     api
       .get(`/api/files/${file.id}/preview`)
