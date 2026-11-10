@@ -53,7 +53,7 @@ const ShareModal = ({ item, isOpen, onClose }) => {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
-      toast.error("Failed to copy link to clipboard.");
+      toast.error("Could not copy link.");
     }
   };
 
