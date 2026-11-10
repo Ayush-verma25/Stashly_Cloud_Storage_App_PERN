@@ -32,9 +32,9 @@ const MoveModal = ({ item, isOpen, onClose }) => {
     if (!item) return;
 
     setIsMoving(true);
-    await moveItem(item, selectedFolderId);
+    const ok = await moveItem(item, selectedFolderId);
     setIsMoving(false);
-    onClose();
+    if (ok) onClose();
   };
 
   return (
