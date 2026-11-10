@@ -44,12 +44,16 @@ const ShareModal = ({ item, isOpen, onClose }) => {
     }
   }, [isOpen, item, getOrCreateShareLink]);
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     if (!generatedLink) return;
-    navigator.clipboard.writeText(generatedLink);
-    setCopied(true);
-    toast.success("Link copied to clipboard!");
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(generatedLink);
+      setCopied(true);
+      toast.success("Link copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Could not copy link.");
+    }
   };
 
   const handleDeleteSearchLink = async () => {
