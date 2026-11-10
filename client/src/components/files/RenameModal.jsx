@@ -15,12 +15,14 @@ const RenameModal = ({ item, isOpen, onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !item) return;
+    if (!name.trim() || !item || isLoading) return;
 
     setIsLoading(true);
-    await renameItem(item, name.trim());
-    setIsLoading(false);
-    onClose();
+    try {
+      if (await renameItem(item, name.trim())) onClose();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

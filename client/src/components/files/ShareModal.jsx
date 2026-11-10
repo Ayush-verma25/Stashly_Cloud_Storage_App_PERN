@@ -44,12 +44,17 @@ const ShareModal = ({ item, isOpen, onClose }) => {
     }
   }, [isOpen, item, getOrCreateShareLink]);
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     if (!generatedLink) return;
-    navigator.clipboard.writeText(generatedLink);
-    setCopied(true);
-    toast.success("Link copied to clipboard!");
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(generatedLink);
+      setCopied(true);
+      toast.success("Link copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      toast.error("Failed to copy link to clipboard.");
+    }
   };
 
   const handleDeleteSearchLink = async () => {
@@ -123,10 +128,14 @@ const ShareModal = ({ item, isOpen, onClose }) => {
             {/* Delete Share Link option */}
             <div className="pt-2 border-t border-slate-100 text-slate-500 flex items-center justify-end gap-2">
               <span className="text-xs">Want To revoke access?</span>
-              <XIcon
+              <button
+                type="button"
+                aria-label="Revoke share link"
                 onClick={handleDeleteSearchLink}
-                className="size-4 hover: text-red-600 cursor-pointer"
-              />
+                className="hover:text-red-600 cursor-pointer"
+              >
+                <XIcon className="size-4" />
+              </button>
             </div>
           </div>
         ) : (

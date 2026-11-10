@@ -16,12 +16,23 @@ const MoveModal = ({ item, isOpen, onClose }) => {
 
     setSelectedFolderId(item?.parent_id ?? null);
 
-    api
-      .get("/api/folders")
-      .then((response) => {
+    Promise.all([api.get("/api/folders"), api.get("/api/trash")])
+      .then(([response, trashResponse]) => {
         const folders = response?.data?.folders || [];
+        const allFolders = [...folders, ...(trashResponse.data?.folders || [])];
+        const parents = new Map(allFolders.map((folder) => [folder.id, folder.parent_id]));
+        const isDescendant = (folder) => {
+          const visited = new Set();
+          let id = folder.id;
+          while (id != null && !visited.has(id)) {
+            if (id === item.id) return true;
+            visited.add(id);
+            id = parents.get(id);
+          }
+          return false;
+        };
         const filtered = folders.filter(
-          (folder) => item?.item_type !== "folder" || folder.id !== item.id,
+          (folder) => item?.item_type !== "folder" || !isDescendant(folder),
         );
         setAvailableFolder(filtered);
       })
@@ -29,12 +40,14 @@ const MoveModal = ({ item, isOpen, onClose }) => {
   }, [item, isOpen]);
 
   const handleMove = async () => {
-    if (!item) return;
+    if (!item || isMoving) return;
 
     setIsMoving(true);
-    await moveItem(item, selectedFolderId);
-    setIsMoving(false);
-    onClose();
+    try {
+      if (await moveItem(item, selectedFolderId)) onClose();
+    } finally {
+      setIsMoving(false);
+    }
   };
 
   return (

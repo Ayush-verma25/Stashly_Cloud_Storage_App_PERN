@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Breadcrumbs from "../components/layout/Breadcrumbs";
 import FileGrid from "../components/files/FileGrid";
 import { useNavigate, useParams } from "react-router-dom";
@@ -22,6 +22,8 @@ const Drive = () => {
   const [renameItem, setRenameItem] = useState(null);
   const [moveItem, setMoveItem] = useState(null);
   const [deleteItem, setDeleteItem] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteInProgress = useRef(false);
 
   useEffect(() => {
     const id = folderId || null;
@@ -30,9 +32,15 @@ const Drive = () => {
   }, [folderId, fetchDriveContent, setCurrentFolderId]);
 
   const handleConfermDelete = async () => {
-    if (!deleteItem) return;
-    await removeDriveItem(deleteItem);
-    setDeleteItem(null);
+    if (!deleteItem || deleteInProgress.current) return;
+    deleteInProgress.current = true;
+    setIsDeleting(true);
+    try {
+      if (await removeDriveItem(deleteItem)) setDeleteItem(null);
+    } finally {
+      deleteInProgress.current = false;
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -78,8 +86,9 @@ const Drive = () => {
       {deleteItem && (
         <ConfirmDialog
           isOpen={!!deleteItem}
-          onClose={() => setDeleteItem(null)}
+          onClose={() => { if (!deleteInProgress.current) setDeleteItem(null); }}
           onConfirm={handleConfermDelete}
+          isLoading={isDeleting}
           title={`Move "${deleteItem.name}" to Trash?`}
           message="You can restore Deleted items from Trash at any time."
           confirmText="Move to Trash"
