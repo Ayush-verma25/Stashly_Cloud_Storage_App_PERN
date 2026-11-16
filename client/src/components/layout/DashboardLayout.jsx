@@ -7,6 +7,7 @@ import { Button } from "../ui/Button";
 import { useApp } from "../../context/AppContext";
 import api from "../../config/api";
 import toast from "react-hot-toast";
+import CreateFolderModal from "../folders/CreateFolderModal";
 
 const DashboardLayout = () => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -71,10 +72,18 @@ const DashboardLayout = () => {
             className="w-full rounded-lg border border-slate-300 px-3 py-2"
           />
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={closeCreateFolder} disabled={isCreatingFolder}>
+            <Button
+              variant="secondary"
+              onClick={closeCreateFolder}
+              disabled={isCreatingFolder}
+            >
               Cancel
             </Button>
-            <Button type="submit" isLoading={isCreatingFolder} disabled={!folderName.trim()}>
+            <Button
+              type="submit"
+              isLoading={isCreatingFolder}
+              disabled={!folderName.trim()}
+            >
               Create Folder
             </Button>
           </div>
@@ -90,6 +99,12 @@ const DashboardLayout = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Create Folder Modal */}
+      <CreateFolderModal
+        isOpen={isCreateFolderOpen}
+        onClose={() => setIsCreateFolderOpen(false)}
+      />
     </div>
   );
 };
