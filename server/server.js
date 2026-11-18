@@ -1,5 +1,5 @@
 import express from "express";
-import "dotenv/config";
+import "./config/env.js";
 import cors from "cors";
 import cookeiParser from "cookie-parser";
 import { initDB } from "./config/db.js";
@@ -8,7 +8,7 @@ import authRouter from "./routes/authRouter.js";
 const app = express();
 
 // Cors Configration
-const allowedOrigins = process.env.ORIGINS.split(",");
+const allowedOrigins = (process.env.ORIGINS || "").split(",").map(origin => origin.trim()).filter(Boolean);
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 //Middlewares

@@ -9,8 +9,16 @@ export const protect = async (req, res, next) => {
     return res.status(401).json({ error: "Unauthorised. Please log in." });
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res
+      .status(401)
+      .json({ error: "Token invalid or expired. please log in again!" });
+  }
+
+  try {
     const [user] =
       await sql`SELECT id, name, email, storage_used, storage_limit, created_at, updated_at FROM users WHERE id = ${decoded.id}`;
 
@@ -20,9 +28,7 @@ export const protect = async (req, res, next) => {
 
     req.user = user;
     next();
-  } catch {
-    return res
-      .status(401)
-      .json({ error: "Token invalid or expired. please log in again!" });
+  } catch (error) {
+    return next(error);
   }
 };

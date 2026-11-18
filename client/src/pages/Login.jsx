@@ -23,7 +23,7 @@ const Login = ({ mode = "login" }) => {
       ? await register(form.name, form.email, form.password)
       : await login(form.email, form.password);
     setIsLoading(false);
-    if (ok) navigate("/");
+    if (ok) navigate(isRegister ? "/login" : "/");
   };
 
   return (
