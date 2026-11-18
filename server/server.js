@@ -24,7 +24,7 @@ app.use("/api/auth", authRouter);
 //Error Handeling Middleware
 app.use((err, _req, res, _next) => {
   res
-    .status(err.ststus || 500)
+    .status(err.status || 500)
     .json({ error: err.message || "Something went Wrong!" });
 });
 
