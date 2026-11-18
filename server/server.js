@@ -3,6 +3,7 @@ import "dotenv/config";
 import cors from "cors";
 import cookeiParser from "cookie-parser";
 import { initDB } from "./config/db.js";
+import authRouter from "./routes/authRouter.js";
 
 const app = express();
 
@@ -16,6 +17,9 @@ app.use(express.json({ limit: "100mb" }));
 
 //Root API
 app.get("/", (_req, res) => res.send("Server is Up and Running!"));
+
+// App APi Routes
+app.use("/api/auth", authRouter);
 
 //Error Handeling Middleware
 app.use((err, _req, res, _next) => {
