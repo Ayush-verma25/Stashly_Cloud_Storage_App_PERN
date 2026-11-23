@@ -1,8 +1,13 @@
-export function Input({ label, error, icon: Icon, className = "", type = "text", required = false, ...props }) {
+import { useId } from "react";
+
+export function Input({ label, error, icon: Icon, className = "", type = "text", required = false, id, ...props }) {
+    const generatedId = useId();
+    const inputId = id ?? generatedId;
+
     return (
         <div className="w-full">
             {label && (
-                <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                <label htmlFor={inputId} className="block text-xs font-medium text-slate-700 mb-1.5">
                     {label} {required && <span className="text-red-500">*</span>}
                 </label>
             )}
@@ -13,7 +18,9 @@ export function Input({ label, error, icon: Icon, className = "", type = "text",
                     </div>
                 )}
                 <input
+                    id={inputId}
                     type={type}
+                    required={required}
                     className={`w-full bg-white border ${
                         error ? "border-red-500 focus:ring-red-500" : "border-slate-300 focus:border-green-600 focus:ring-green-600"
                     } rounded-xl text-slate-900 placeholder-slate-400 text-sm ${

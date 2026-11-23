@@ -1,6 +1,4 @@
 import React, { useRef } from "react";
-import api from "../../config/api";
-import toast from "react-hot-toast";
 import { useApp } from "../../context/AppContext";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -19,46 +17,10 @@ import { useDrive } from "../../hooks/useDrive";
 const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
 
   const { isUploading, uploadFiles } = useDrive();
-  const {
-    user,
-    currentFolderId,
-    SetIsUploading,
-    SetUploadeProgress,
-    setFiles,
-    refreshUser,
-  } = useApp();
+  const { user, currentFolderId } = useApp();
 
   const location = useLocation();
   const fileInputRef = useRef(null);
-
-  const handleFileChange = async (event) => {
-    const input = event.target;
-    const files = Array.from(input.files || []);
-    input.value = "";
-    if (!files.length || isUploading) return;
-
-    const formData = new FormData();
-    files.forEach((file) => formData.append("files", file));
-    if (currentFolderId) formData.append("folder_id", currentFolderId);
-
-    SetIsUploading(true);
-    SetUploadeProgress(0);
-    try {
-      const { data } = await api.post("/api/files/upload", formData, {
-        onUploadProgress: ({ loaded, total }) => {
-          if (total) SetUploadeProgress(Math.round((loaded / total) * 100));
-        },
-      });
-      setFiles((existingFiles) => [...data.files, ...existingFiles]);
-      await refreshUser();
-      toast.success("Files uploaded successfully");
-    } catch (error) {
-      toast.error(error.response?.data?.error || "Error uploading files");
-    } finally {
-      SetIsUploading(false);
-      SetUploadeProgress(0);
-    }
-  };
 
   const storage_used = Number(user?.storage_used ?? 0);
   const storage_limit = Number(user?.storage_limit ?? 1073741824); // 1GB
@@ -68,10 +30,9 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
   );
 
   const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      uploadFiles(e.target.files, currentFolderId);
-      e.target.value = "";
-    }
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length > 0) uploadFiles(files, currentFolderId);
   };
 
   const navItems = [
@@ -93,6 +54,13 @@ const Sidebar = ({ onCreateFolderClick, isMobileOpen, setIsMobileOpen }) => {
       <aside
         className={`fixed top-0 left-0 bottom-0 z-40 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 md:translate-x-0 ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileSelect}
+        />
         {/* Brand header */}
         <div className="flex flex-col items-start gap-1.5 border-b border-slate-200 px-6 py-5">
           <img

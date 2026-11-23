@@ -17,6 +17,9 @@ const getErrMsg = (err, fallback) => err.response?.data?.error || fallback;
 
 export const AppProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const userRef = useRef(null);
+  const authGeneration = useRef(0);
+  const authRequestQueue = useRef(Promise.resolve());
   const [isLoading, setIsLoading] = useState(true);
 
   // Upload Global State
@@ -31,21 +34,42 @@ export const AppProvider = ({ children }) => {
   const [isDriveLoading, setIsDriveLoading] = useState(false);
   const driveRequestId = useRef(0);
 
+  const setAuthenticatedUser = useCallback((nextUser) => {
+    const previousUser = userRef.current;
+    if (previousUser?.id !== nextUser?.id) {
+      driveRequestId.current += 1;
+      setCurrentFolderId(null);
+      setBreadCrumbs(ROOT_BREADCRUMB);
+      setFolders([]);
+      setFiles([]);
+      setIsDriveLoading(false);
+    }
+    userRef.current = nextUser;
+    setUser(nextUser);
+  }, []);
+
   // Filter & sort State
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("name_asc");
 
   // Refresh User Profile & Storage stats
   const refreshUser = useCallback(async () => {
+    const generation = authGeneration.current;
     try {
       const { data } = await api.get("/api/auth/me");
-      setUser(data.user);
-      return data.user;
+      if (generation === authGeneration.current) {
+        setAuthenticatedUser(data.user);
+        return data.user;
+      }
+      return userRef.current;
     } catch {
-      setUser(null);
-      return null;
+      if (generation === authGeneration.current) {
+        setAuthenticatedUser(null);
+        return null;
+      }
+      return userRef.current;
     }
-  }, []);
+  }, [setAuthenticatedUser]);
 
   // check Auth Status on App Load
   useEffect(() => {
@@ -53,16 +77,29 @@ export const AppProvider = ({ children }) => {
   }, [refreshUser]);
 
   // Auth Action helper
-  const authAction = async (requestFn, successMsg, errorFallback) => {
-    try {
-      const { data } = await requestFn();
-      setUser(data.user);
-      if (successMsg) toast.success(successMsg);
-      return true;
-    } catch (error) {
-      toast.error(getErrMsg(error, errorFallback));
-      return false;
-    }
+  const enqueueAuthRequest = (requestFn) => {
+    const queuedRequest = authRequestQueue.current.then(requestFn, requestFn);
+    authRequestQueue.current = queuedRequest.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queuedRequest;
+  };
+
+  const authAction = (requestFn, successMsg, errorFallback) => {
+    ++authGeneration.current;
+    return enqueueAuthRequest(async () => {
+      try {
+        const { data } = await requestFn();
+        ++authGeneration.current;
+        setAuthenticatedUser(data.user);
+        if (successMsg) toast.success(successMsg);
+        return true;
+      } catch (error) {
+        toast.error(getErrMsg(error, errorFallback));
+        return false;
+      }
+    });
   };
 
   const login = (email, password) => {
@@ -73,22 +110,29 @@ export const AppProvider = ({ children }) => {
     );
   };
 
-  const register = (name, email, password) => {
-    return authAction(
-      () => api.post("/api/auth/register", { name, email, password }),
-      "Account Created Successfully!",
-      "Registration Failed",
-    );
+  const register = async (name, email, password) => {
+    try {
+      const { data } = await api.post("/api/auth/register", { name, email, password });
+      toast.success(data.message);
+      return true;
+    } catch (error) {
+      toast.error(getErrMsg(error, "Registration Failed"));
+      return false;
+    }
   };
 
-  const logout = async () => {
-    try {
-      await api.post("/api/auth/logout");
-      setUser(null);
-      toast.success("Logout Successfully");
-    } catch {
-      toast.error("Logout error");
-    }
+  const logout = () => {
+    const generation = ++authGeneration.current;
+    return enqueueAuthRequest(async () => {
+      try {
+        await api.post("/api/auth/logout");
+        ++authGeneration.current;
+        setAuthenticatedUser(null);
+        toast.success("Logout Successfully");
+      } catch {
+        if (generation === authGeneration.current) toast.error("Logout error");
+      }
+    });
   };
 
   const fetchDriveContent = useCallback(
@@ -134,7 +178,7 @@ export const AppProvider = ({ children }) => {
 
   const value = {
     user,
-    setUser,
+    setUser: setAuthenticatedUser,
     login,
     register,
     logout,

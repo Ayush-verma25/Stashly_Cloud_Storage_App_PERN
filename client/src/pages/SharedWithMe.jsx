@@ -13,16 +13,26 @@ const SharedWithMe = () => {
   const [data, setData] = useState(null);
 
   useEffect(() => {
+    let isCurrent = true;
     setIsLoading(true);
+    setError(null);
     api
       .get(`/api/shares/access/${token}`)
       .then((res) => {
-        setData(res.data);
+        if (isCurrent) setData(res.data);
       })
       .catch((err) => {
-        setError(err.response?.data?.error || "Unable to load shared Item.");
+        if (isCurrent) {
+          setError(err.response?.data?.error || "Unable to load shared Item.");
+        }
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [token]);
 
   return (

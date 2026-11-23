@@ -1,6 +1,11 @@
+import { useId } from "react";
 import { XIcon } from "lucide-react";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 
 export function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-md" }) {
+    const headingId = useId();
+    const dialogRef = useDialogFocus(isOpen, onClose);
+
     if (!isOpen) return null;
 
     return (
@@ -9,13 +14,18 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-md" 
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
         >
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={headingId}
+                tabIndex={-1}
                 className={`w-full ${maxWidth} bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up`}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                    <h3 className="text-base font-medium text-slate-900">{title}</h3>
-                    <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+                    <h3 id={headingId} className="text-base font-medium text-slate-900">{title}</h3>
+                    <button type="button" aria-label="Close" onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
                         <XIcon className="size-5" />
                     </button>
                 </div>

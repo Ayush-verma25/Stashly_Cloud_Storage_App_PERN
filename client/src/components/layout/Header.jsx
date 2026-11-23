@@ -20,6 +20,7 @@ const Header = ({ onMobileMenuToggle }) => {
       <div className="flex items-center gap-3 flex-1 max-w-xl">
         <button
           type="button"
+          aria-label="Toggle navigation menu"
           onClick={onMobileMenuToggle}
           className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 md:hidden"
         >
@@ -54,6 +55,7 @@ const Header = ({ onMobileMenuToggle }) => {
           trigger={
             <button
               type="button"
+              aria-label="Sort files and folders"
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"
             >
               <ArrowUpDownIcon className="w-3.5 h-3.5 text-slate-500" />

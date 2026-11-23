@@ -4,7 +4,7 @@ import {
   Trash2Icon,
   TrashIcon,
 } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDrive } from "../hooks/useDrive";
 import { useApp } from "../context/AppContext";
 import api from "../config/api";
@@ -18,23 +18,34 @@ import { formatBytes, getFileIcon } from "../assets/assets";
 const Trash = () => {
   const [trash, setTrash] = useState({ files: [], folders: [] });
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [isEmptying, setIsEmptying] = useState(false);
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [isDeletingItem, setIsDeletingItem] = useState(false);
+  const trashRequestId = useRef(0);
 
   const { files, folders } = trash;
   const { restoreItem, permanentDeleteItem } = useDrive();
   const { refreshUser } = useApp();
 
   const fetchTrash = useCallback(async () => {
+    const requestId = ++trashRequestId.current;
+    setIsLoading(true);
+    setLoadError(null);
     try {
       const { data } = await api.get("/api/trash");
+      if (requestId !== trashRequestId.current) return;
       setTrash({ files: data.files || [], folders: data.folders || [] });
+      setLoadError(null);
     } catch (error) {
-      toast.error(error.response?.data?.error || "Error loading trash");
+      if (requestId === trashRequestId.current) {
+        const message = error.response?.data?.error || "Error loading trash";
+        setLoadError(message);
+        toast.error(message);
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === trashRequestId.current) setIsLoading(false);
     }
   }, []);
 
@@ -112,6 +123,13 @@ const Trash = () => {
       {isLoading ? (
         <div className="py-20 flex justify-center">
           <Spinner size="lg" className="text-green-600" />
+        </div>
+      ) : loadError ? (
+        <div className="rounded-xl border border-red-200 bg-white p-6 text-center">
+          <p className="mb-4 text-sm text-red-600">{loadError}</p>
+          <Button variant="secondary" onClick={fetchTrash}>
+            Retry
+          </Button>
         </div>
       ) : !hasItems ? (
         <EmptyState

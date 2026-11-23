@@ -102,16 +102,7 @@ api.defaults.adapter = async (config) => {
         saveUser(user);
         responseData = { user, token: "dummy_jwt_token_sample" };
     } else if (pathname === "/api/auth/register" && method === "post") {
-        const user = {
-            id: `usr_${Date.now()}`,
-            name: body.name || "User",
-            email: body.email || "user@example.com",
-            storage_used: 0,
-            storage_limit: 1073741824,
-            created_at: new Date().toISOString(),
-        };
-        saveUser(user);
-        responseData = { user, token: "dummy_jwt_token_sample" };
+        responseData = { message: "Registration request processed. Please log in with your credentials." };
     } else if (pathname === "/api/auth/logout" && method === "post") {
         saveUser(null);
         responseData = { message: "Logged out successfully" };
@@ -174,10 +165,28 @@ api.defaults.adapter = async (config) => {
         const folders = getFolders();
         const index = folders.findIndex((f) => f.id === id);
         if (index !== -1) {
-            folders[index].parent_id = targetParentId;
-            folders[index].updated_at = new Date().toISOString();
-            saveFolders(folders);
-            responseData = { folder: folders[index] };
+            const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+            const visited = new Set();
+            let ancestorId = targetParentId;
+            let createsCycle = false;
+            while (ancestorId != null && !visited.has(ancestorId)) {
+                if (ancestorId === id) {
+                    createsCycle = true;
+                    break;
+                }
+                visited.add(ancestorId);
+                ancestorId = foldersById.get(ancestorId)?.parent_id;
+            }
+
+            if (createsCycle) {
+                status = 400;
+                responseData = { error: "Cannot move a folder into itself or a descendant." };
+            } else {
+                folders[index].parent_id = targetParentId;
+                folders[index].updated_at = new Date().toISOString();
+                saveFolders(folders);
+                responseData = { folder: folders[index] };
+            }
         } else {
             status = 404;
             responseData = { error: "Folder not found" };
@@ -198,7 +207,18 @@ api.defaults.adapter = async (config) => {
     } else if (pathname.match(/^\/api\/folders\/[^/]+\/permanent$/) && method === "delete") {
         const id = pathname.split("/")[3];
         const folders = getFolders();
-        saveFolders(folders.filter((f) => f.id !== id));
+        saveFolders(
+            folders
+                .filter((f) => f.id !== id)
+                .map((folder) =>
+                    folder.parent_id === id ? { ...folder, parent_id: null } : folder,
+                ),
+        );
+        saveFiles(
+            getFiles().map((file) =>
+                file.folder_id === id ? { ...file, folder_id: null } : file,
+            ),
+        );
         responseData = { message: "Folder permanently deleted" };
     } else if (pathname.match(/^\/api\/folders\/[^/]+$/) && method === "get") {
         const id = pathname.split("/").pop();
