@@ -46,7 +46,7 @@ const SharedFile = () => {
   const handleDeleteShare = async () => {
     if (!deletingShare) return;
 
-    setDeletingShare(true);
+    setIsDeleting(true);
     try {
       await api.delete(`/api/shares/${deletingShare.id}`);
       toast.success("Shared Link deleted.");
@@ -54,7 +54,7 @@ const SharedFile = () => {
     } catch (err) {
       toast.error(err?.response?.data?.error || "Error deleting share link.");
     } finally {
-      setIsLoading(false);
+      setIsDeleting(false);
       setDeletingShare(null);
     }
   };

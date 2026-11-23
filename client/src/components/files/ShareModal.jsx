@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "../ui/Modal";
 import { CheckIcon, CopyIcon, Loader2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -11,9 +11,11 @@ const ShareModal = ({ item, isOpen, onClose }) => {
   const [generatedLink, setGeneretedLink] = useState("");
   const [shareLinkId, setShareLinkId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const requestId = useRef(0);
 
   const getOrCreateShareLink = useCallback(async () => {
     if (!item) return;
+    const currentRequestId = ++requestId.current;
     setIsLoading(true);
     try {
       const { data } = await api.post("/api/shares", {
@@ -23,15 +25,17 @@ const ShareModal = ({ item, isOpen, onClose }) => {
       });
 
       const link = data.share_link;
-      if (link?.token) {
+      if (currentRequestId === requestId.current && link?.token) {
         const fullUrl = `${window.location.origin}/s/${link.token}`;
         setGeneretedLink(fullUrl);
         setShareLinkId(link.id);
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || "Error Generating Share link.");
+      if (currentRequestId === requestId.current) {
+        toast.error(err.response?.data?.error || "Error Generating Share link.");
+      }
     } finally {
-      setIsLoading(false);
+      if (currentRequestId === requestId.current) setIsLoading(false);
     }
   }, [item]);
 
@@ -42,6 +46,9 @@ const ShareModal = ({ item, isOpen, onClose }) => {
       setShareLinkId(null);
       getOrCreateShareLink();
     }
+    return () => {
+      requestId.current += 1;
+    };
   }, [isOpen, item, getOrCreateShareLink]);
 
   const copyToClipboard = async () => {
@@ -59,14 +66,18 @@ const ShareModal = ({ item, isOpen, onClose }) => {
 
   const handleDeleteSearchLink = async () => {
     if (!shareLinkId) return;
+    const currentRequestId = ++requestId.current;
     try {
       await api.delete(`/api/shares/${shareLinkId}`);
+      if (currentRequestId !== requestId.current) return;
       toast.success("Share Link deleted.");
       setGeneretedLink("");
       setShareLinkId(null);
       onClose();
     } catch (err) {
-      toast.error(err?.response?.data?.error || "Error deleting share link.");
+      if (currentRequestId === requestId.current) {
+        toast.error(err?.response?.data?.error || "Error deleting share link.");
+      }
     }
   };
 

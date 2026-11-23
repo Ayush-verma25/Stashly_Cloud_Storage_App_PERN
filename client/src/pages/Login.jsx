@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Input } from "../components/ui/Input";
 import { LockIcon, MailIcon, UserIcon } from "lucide-react";
 import { Button } from "../components/ui/Button";
@@ -8,6 +8,7 @@ import { useApp } from "../context/AppContext";
 const Login = ({ mode = "login" }) => {
   const isRegister = mode === "register";
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, register } = useApp();
 
   const [form, setForm] = useState({ name: "", email: "", password: "" });
@@ -23,7 +24,19 @@ const Login = ({ mode = "login" }) => {
       ? await register(form.name, form.email, form.password)
       : await login(form.email, form.password);
     setIsLoading(false);
-    if (ok) navigate("/");
+    if (ok) {
+      const destination = location.state?.from;
+      navigate(
+        destination
+          ? {
+              pathname: destination.pathname,
+              search: destination.search,
+              hash: destination.hash,
+            }
+          : "/",
+        { replace: true },
+      );
+    }
   };
 
   return (
@@ -123,6 +136,7 @@ const Login = ({ mode = "login" }) => {
                 Already have a Account?{" "}
                 <Link
                   to="/login"
+                  state={location.state}
                   className="text-green-600 font-semibold hover:underline"
                 >
                   Sign In here
@@ -133,6 +147,7 @@ const Login = ({ mode = "login" }) => {
                 Don't have an Account Yet?{" "}
                 <Link
                   to="/register"
+                  state={location.state}
                   className="text-green-600 font-semibold hover:underline"
                 >
                   Create Account

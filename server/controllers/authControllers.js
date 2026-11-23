@@ -21,14 +21,31 @@ export const sendTokenResponse = (res, userId, statusCode = 200, extraData = {})
 
 //Register new User
 //POST /api/auth/register
-export const registerUser = async (req, res) => {
+export const registerUser = async (req, res, next) => {
     try {
-        const {name, email, password} = req.body;
-        if(!name?.trim() || !email?.trim() || !password) {
+        const {name, email, password} = req.body || {};
+        if (
+            typeof name !== "string" ||
+            typeof email !== "string" ||
+            typeof password !== "string" ||
+            !name.trim() ||
+            !email.trim() ||
+            !password
+        ) {
             return res.status(400).json({error: "Name, email, and password are required."})
         }
-
+        const normalizedName = name.trim();
         const normalizedEmail = email.toLowerCase().trim();
+        if (
+            Array.from(normalizedName).length > 255 ||
+            Array.from(normalizedEmail).length > 255
+        ) {
+            return res.status(400).json({error: "Name and email must not exceed 255 characters."})
+        }
+        if (bcrypt.truncates(password)) {
+            return res.status(400).json({error: "Password must not exceed 72 bytes."})
+        }
+
         const [existing] = await sql`SELECT id FROM users WHERE email = ${normalizedEmail}`
 
         if(existing){
@@ -41,26 +58,42 @@ export const registerUser = async (req, res) => {
 
         const storageLimit = Number(process.env.MAX_STORAGE_PER_USER || 1073741824);
 
-        const user = await sql`INSERT INTO users (name, email, password, storage_limit)
-        VALUE (${name.trim()}, ${normalizedEmail}, ${hashedPassword}, ${storageLimit})
+        const [user] = await sql`INSERT INTO users (name, email, password, storage_limit)
+        VALUES (${normalizedName}, ${normalizedEmail}, ${hashedPassword}, ${storageLimit})
+        ON CONFLICT (email) DO NOTHING
         RETURNING id, name, email, storage_used, storage_limit, created_at, updated_at`;
+
+        if (!user) {
+            return res.status(400).json({error: "User with this email already exists."})
+        }
 
         return sendTokenResponse(res, user.id, 201, {user});
     } catch (error) {
-        return res.status(500).json({error: error.message})
+        return next(error);
     }
 }
 
 //Login User
 //POST /api/auth/login
-export const LoginUser = async (req, res) => {
+export const LoginUser = async (req, res, next) => {
 try {
-        const { email, password} = req.body;
-        if(!email?.trim() || !password) {
+        const { email, password} = req.body || {};
+        if (
+            typeof email !== "string" ||
+            typeof password !== "string" ||
+            !email.trim() ||
+            !password
+        ) {
             return res.status(400).json({error: "Email and Password are required."})
         }
-
         const normalizedEmail = email.toLowerCase().trim();
+        if (Array.from(normalizedEmail).length > 255) {
+            return res.status(400).json({error: "Email must not exceed 255 characters."})
+        }
+        if (bcrypt.truncates(password)) {
+            return res.status(400).json({error: "Password must not exceed 72 bytes."})
+        }
+
         const [user] = await sql`SELECT id, name, email, password, storage_used, storage_limit, created_at, updated_at FROM users WHERE email = ${normalizedEmail}`
 
         if(!user){
@@ -76,13 +109,13 @@ try {
 
         return sendTokenResponse(res, user.id, 200, {user});
     } catch (error) {
-        return res.status(500).json({error: error.message})
+        return next(error);
     }
 }
 
 //Logout user & clear cookie
 // POST /api/auth/logout
-export const LogoutUser = async (_req, res) => {
+export const LogoutUser = async (_req, res, next) => {
     try {
         const isProduction = process.env.NODE_ENV === "production";
         res.clearCookie("token", {
@@ -93,17 +126,17 @@ export const LogoutUser = async (_req, res) => {
         
         return res.status(200).json({message: "Logged out successfully."})
     } catch (error) {
-        return res.status(500).json({error: error.message})
+        return next(error);
     }
 }
 
 // Get current user profile & storage info
 // GET /api/auth/me
-export const getMe = async (req, res) => {
+export const getMe = async (req, res, next) => {
     try {
         // req.user is already loaded by protect middleware
         return res.status(200).json({user: req.user})
     } catch (error) {
-        return res.status(500).json({error: error.message})
+        return next(error);
     }
 }

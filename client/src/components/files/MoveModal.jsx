@@ -10,11 +10,20 @@ const MoveModal = ({ item, isOpen, onClose }) => {
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [isMoving, setIsMoving] = useState(false);
   const { moveItem } = useDrive();
+  const itemId = item?.id;
+  const itemType = item?.item_type;
+  const parentId = item?.parent_id ?? null;
 
   useEffect(() => {
-    if (!isOpen) return;
+    let isCancelled = false;
+    setAvailableFolder([]);
+    if (!isOpen || itemId == null) {
+      return () => {
+        isCancelled = true;
+      };
+    }
 
-    setSelectedFolderId(item?.parent_id ?? null);
+    setSelectedFolderId(parentId);
 
     Promise.all([api.get("/api/folders"), api.get("/api/trash")])
       .then(([response, trashResponse]) => {
@@ -25,19 +34,25 @@ const MoveModal = ({ item, isOpen, onClose }) => {
           const visited = new Set();
           let id = folder.id;
           while (id != null && !visited.has(id)) {
-            if (id === item.id) return true;
+            if (id === itemId) return true;
             visited.add(id);
             id = parents.get(id);
           }
           return false;
         };
         const filtered = folders.filter(
-          (folder) => item?.item_type !== "folder" || !isDescendant(folder),
+          (folder) => itemType !== "folder" || !isDescendant(folder),
         );
-        setAvailableFolder(filtered);
+        if (!isCancelled) setAvailableFolder(filtered);
       })
-      .catch(() => setAvailableFolder([]));
-  }, [item, isOpen]);
+      .catch(() => {
+        if (!isCancelled) setAvailableFolder([]);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [itemId, itemType, parentId, isOpen]);
 
   const handleMove = async () => {
     if (!item || isMoving) return;

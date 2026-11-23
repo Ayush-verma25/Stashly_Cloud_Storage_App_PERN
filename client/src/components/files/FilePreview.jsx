@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import api from "../../config/api";
 import { DownloadIcon, FileTextIcon, Loader2Icon, XIcon } from "lucide-react";
 import { formatBytes } from "../../assets/assets";
+import { useDialogFocus } from "../../hooks/useDialogFocus";
 
 const FilePreview = ({ file, onClose }) => {
+  const headingId = useId();
+  const dialogRef = useDialogFocus(!!file, onClose);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -44,6 +47,11 @@ const FilePreview = ({ file, onClose }) => {
     >
       {/* Modal Box  */}
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-4xl bg-white border border-slate-200 rounded-2xl flex flex-col max-h-[92vh] overflow-hidden animate-slide-up"
       >
@@ -52,7 +60,7 @@ const FilePreview = ({ file, onClose }) => {
           <div className="flex items-center gap-3 min-w-0 pr-4">
             <FileTextIcon className="size-5 text-green-600 shrink-0" />
             <div>
-              <h3 className="text-base font-medium text-slate-900 truncate">
+              <h3 id={headingId} className="text-base font-medium text-slate-900 truncate">
                 {file.name}
               </h3>
               <p className="text-xs text-slate-500">{formatBytes(file.size)}</p>
@@ -73,6 +81,8 @@ const FilePreview = ({ file, onClose }) => {
               </a>
             )}
             <button
+              type="button"
+              aria-label="Close preview"
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
             >

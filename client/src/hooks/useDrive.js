@@ -2,9 +2,17 @@ import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import api from "../config/api";
 
-const isFolderItem = (item) =>
-  item?.item_type === "folder" ||
-  (!item?.mime_type && item?.path !== undefined);
+const getItemType = (item, itemType) => {
+  if (itemType === "folder" || itemType === "file") return itemType;
+  if (item?.item_type === "folder" || item?.item_type === "file") {
+    return item.item_type;
+  }
+  if (item?.mime_type) return "file";
+  if (item?.path !== undefined) return "folder";
+  return null;
+};
+
+const isFolderItem = (item, itemType) => getItemType(item, itemType) === "folder";
 
 export function useDrive() {
   const {
@@ -57,7 +65,7 @@ export function useDrive() {
       clearInterval(interval);
       setUploadProgress(100);
       await new Promise((r) => setTimeout(r, 300));
-      toast.success(`${data.files.length} file(s) uploded Successfully!`);
+      toast.success(`${data.files.length} file(s) uploaded Successfully!`);
       await fetchDriveContent(folder_id);
       await refreshUser();
     } catch (err) {
@@ -82,10 +90,15 @@ export function useDrive() {
 
   // Polymorphic operations (accepts file or folder item / id)
 
-  const renameItem = (item, newName) => {
-    const isFolder = isFolderItem(item);
+  const renameItem = (item, newName, itemType) => {
+    const type = getItemType(item, itemType);
+    if (!type) {
+      toast.error("Item type is required.");
+      return Promise.resolve(false);
+    }
+    const isFolder = isFolderItem(item, type);
     const endpoint = isFolder ? "folders" : "files";
-    const id = item.id || item;
+    const id = typeof item === "object" ? item.id : item;
     return runAction(
       api.patch(`/api/${endpoint}/${id}/rename`, { name: newName }),
       `${isFolder ? "Folder" : "File"} renamed.`,
@@ -94,13 +107,18 @@ export function useDrive() {
     );
   };
 
-  const moveItem = (item, targetFolderId) => {
-    const isFolder = isFolderItem(item);
+  const moveItem = (item, targetFolderId, itemType) => {
+    const type = getItemType(item, itemType);
+    if (!type) {
+      toast.error("Item type is required.");
+      return Promise.resolve(false);
+    }
+    const isFolder = isFolderItem(item, type);
     const endpoint = isFolder ? "folders" : "files";
     const payload = isFolder
       ? { target_parent: targetFolderId }
       : { target_folder: targetFolderId };
-    const id = item.id || item;
+    const id = typeof item === "object" ? item.id : item;
     return runAction(
       api.patch(`/api/${endpoint}/${id}/move`, payload),
       `${isFolder ? "Folder" : "File"} moved.`,
@@ -109,10 +127,15 @@ export function useDrive() {
     );
   };
 
-  const deleteItem = (item) => {
-    const isFolder = isFolderItem(item);
+  const deleteItem = (item, itemType) => {
+    const type = getItemType(item, itemType);
+    if (!type) {
+      toast.error("Item type is required.");
+      return Promise.resolve(false);
+    }
+    const isFolder = isFolderItem(item, type);
     const endpoint = isFolder ? "folders" : "files";
-    const id = item.id || item;
+    const id = typeof item === "object" ? item.id : item;
     return runAction(
       api.delete(`/api/${endpoint}/${id}`),
       `${isFolder ? "Folder" : "File"} moved to Trash.`,
@@ -121,9 +144,14 @@ export function useDrive() {
     );
   };
 
-  const restoreItem = (item, targetFolderId) => {
-    const endpoint = isFolderItem(item) ? "folders" : "files";
-    const id = item.id || item;
+  const restoreItem = (item, itemType) => {
+    const type = getItemType(item, itemType);
+    if (!type) {
+      toast.error("Item type is required.");
+      return Promise.resolve(false);
+    }
+    const endpoint = isFolderItem(item, type) ? "folders" : "files";
+    const id = typeof item === "object" ? item.id : item;
     return runAction(
       api.post(`/api/${endpoint}/${id}/restore`),
       "Item restored.",
@@ -131,12 +159,17 @@ export function useDrive() {
     );
   };
 
-  const permanentDeleteItem = (item, targetFolderId) => {
-    const endpoint = isFolderItem(item) ? "folders" : "files";
-    const id = item.id || item;
+  const permanentDeleteItem = (item, itemType) => {
+    const type = getItemType(item, itemType);
+    if (!type) {
+      toast.error("Item type is required.");
+      return Promise.resolve(false);
+    }
+    const endpoint = isFolderItem(item, type) ? "folders" : "files";
+    const id = typeof item === "object" ? item.id : item;
     return runAction(
       api.delete(`/api/${endpoint}/${id}/permanent`),
-      "Item permenentaly deleted.",
+      "Item permanently deleted.",
       "Error deleting item.",
       () => refreshUser(),
     );

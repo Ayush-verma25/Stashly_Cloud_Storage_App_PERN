@@ -1,38 +1,71 @@
 import express from "express";
 import "dotenv/config";
 import cors from "cors";
-import cookeiParser from "cookie-parser";
+import cookieParser from "cookie-parser";
 import { initDB } from "./config/db.js";
+import folderRouter from "./routes/folderRoutes.js";
 import authRouter from "./routes/authRouter.js";
+
+const requiredEnvironment = ["ORIGINS", "JWT_SECRET", "DATABASE_URL"];
+const missingEnvironment = requiredEnvironment.filter(
+  (name) => !process.env[name]?.trim(),
+);
+if (missingEnvironment.length) {
+  console.error(
+    `Missing required environment variable(s): ${missingEnvironment.join(", ")}`,
+  );
+  process.exit(1);
+}
+
+const allowedOrigins = process.env.ORIGINS.split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+if (!allowedOrigins.length) {
+  console.error("ORIGINS must contain at least one valid origin.");
+  process.exit(1);
+}
 
 const app = express();
 
-// Cors Configration
-const allowedOrigins = process.env.ORIGINS.split(",");
+// CORS configuration
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 
-//Middlewares
-app.use(cookeiParser());
+// Middleware
+app.use(cookieParser());
 app.use(express.json({ limit: "100mb" }));
 
-//Root API
+// Root API
 app.get("/", (_req, res) => res.send("Server is Up and Running!"));
 
-// App APi Routes
+// App API routes
 app.use("/api/auth", authRouter);
+app.use("/api/folders", folderRouter);
 
-//Error Handeling Middleware
+// Error handling middleware
 app.use((err, _req, res, _next) => {
-  res
-    .status(err.status || 500)
-    .json({ error: err.message || "Something went Wrong!" });
+  res.status(err.status || 500).json({
+    error: err.message || "Something went wrong!",
+  });
 });
 
-const port = process.env.PORT || 8000;
+const port = process.env.PORT ? Number(process.env.PORT) : 8000;
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error("PORT must be an integer between 1 and 65535.");
+  process.exit(1);
+}
 
-//Initilise DB Connections then start server
-initDB().then(() => {
-  app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+async function startServer() {
+  await initDB();
+
+  await new Promise((resolve, reject) => {
+    const server = app.listen(port, () => resolve(server));
+    server.once("error", reject);
   });
+
+  console.log(`Server is running on http://localhost:${port}`);
+}
+
+startServer().catch((error) => {
+  console.error("Failed to start server:", error);
+  process.exitCode = 1;
 });
