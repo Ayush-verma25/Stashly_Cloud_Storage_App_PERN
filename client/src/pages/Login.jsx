@@ -25,6 +25,11 @@ const Login = ({ mode = "login" }) => {
       : await login(form.email, form.password);
     setIsLoading(false);
     if (ok) {
+      if (isRegister) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
       const destination = location.state?.from;
       navigate(
         destination

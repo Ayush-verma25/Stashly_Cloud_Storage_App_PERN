@@ -34,6 +34,7 @@ export const registerUser = async (req, res, next) => {
         ) {
             return res.status(400).json({error: "Name, email, and password are required."})
         }
+
         const normalizedName = name.trim();
         const normalizedEmail = email.toLowerCase().trim();
         if (
@@ -46,28 +47,24 @@ export const registerUser = async (req, res, next) => {
             return res.status(400).json({error: "Password must not exceed 72 bytes."})
         }
 
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
         const [existing] = await sql`SELECT id FROM users WHERE email = ${normalizedEmail}`
 
         if(existing){
-            return res.status(400).json({error: "User with this email already exists."})
+            return res.status(200).json({message: "Registration request processed. Please log in with your credentials."})
         }
-
-        const salt = await bcrypt.genSalt(10)
-        const hashedPassword = await bcrypt.hash(password, salt);
-
 
         const storageLimit = Number(process.env.MAX_STORAGE_PER_USER || 1073741824);
 
-        const [user] = await sql`INSERT INTO users (name, email, password, storage_limit)
+        await sql`INSERT INTO users (name, email, password, storage_limit)
         VALUES (${normalizedName}, ${normalizedEmail}, ${hashedPassword}, ${storageLimit})
-        ON CONFLICT (email) DO NOTHING
-        RETURNING id, name, email, storage_used, storage_limit, created_at, updated_at`;
+        ON CONFLICT (email) DO NOTHING`;
 
-        if (!user) {
-            return res.status(400).json({error: "User with this email already exists."})
-        }
-
-        return sendTokenResponse(res, user.id, 201, {user});
+        // A concurrent request may have created the account. Never authenticate
+        // registration requests or expose the inserted account in the response.
+        return res.status(200).json({message: "Registration request processed. Please log in with your credentials."});
     } catch (error) {
         return next(error);
     }
@@ -115,8 +112,13 @@ try {
 
 //Logout user & clear cookie
 // POST /api/auth/logout
-export const LogoutUser = async (_req, res, next) => {
+export const LogoutUser = async (req, res, next) => {
     try {
+        const origin = req.get("Origin");
+        const allowedOrigins = (process.env.ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean);
+        if (!origin || origin === "null" || !allowedOrigins.includes(origin)) {
+            return res.status(403).json({error: "Forbidden origin."});
+        }
         const isProduction = process.env.NODE_ENV === "production";
         res.clearCookie("token", {
             httpOnly: true,

@@ -102,16 +102,7 @@ api.defaults.adapter = async (config) => {
         saveUser(user);
         responseData = { user, token: "dummy_jwt_token_sample" };
     } else if (pathname === "/api/auth/register" && method === "post") {
-        const user = {
-            id: `usr_${Date.now()}`,
-            name: body.name || "User",
-            email: body.email || "user@example.com",
-            storage_used: 0,
-            storage_limit: 1073741824,
-            created_at: new Date().toISOString(),
-        };
-        saveUser(user);
-        responseData = { user, token: "dummy_jwt_token_sample" };
+        responseData = { message: "Registration request processed. Please log in with your credentials." };
     } else if (pathname === "/api/auth/logout" && method === "post") {
         saveUser(null);
         responseData = { message: "Logged out successfully" };

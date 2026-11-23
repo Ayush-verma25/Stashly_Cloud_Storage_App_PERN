@@ -110,12 +110,15 @@ export const AppProvider = ({ children }) => {
     );
   };
 
-  const register = (name, email, password) => {
-    return authAction(
-      () => api.post("/api/auth/register", { name, email, password }),
-      "Account Created Successfully!",
-      "Registration Failed",
-    );
+  const register = async (name, email, password) => {
+    try {
+      const { data } = await api.post("/api/auth/register", { name, email, password });
+      toast.success(data.message);
+      return true;
+    } catch (error) {
+      toast.error(getErrMsg(error, "Registration Failed"));
+      return false;
+    }
   };
 
   const logout = () => {
