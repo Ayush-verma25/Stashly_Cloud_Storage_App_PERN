@@ -3,13 +3,14 @@ import { Dropdown, DropdownItem } from "./Dropdown";
 
 export function ItemDropdown({ item, onPreview, onShare, onRename, onMove, onDelete }) {
     return (
-        <div onClick={(e) => e.stopPropagation()}>
+        <div data-item-actions onClick={(e) => e.stopPropagation()}>
             <Dropdown
                 trigger={
                     <button
+                        data-item-actions-trigger
                         type="button"
                         aria-label={`More actions for ${item?.name || "item"}`}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                     >
                         <MoreVerticalIcon className="size-4" />
                     </button>

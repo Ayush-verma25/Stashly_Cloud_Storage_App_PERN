@@ -6,22 +6,29 @@ const focusableSelector = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
+  "video[controls]",
+  "audio[controls]",
+  "iframe",
+  '[tabindex]:not([tabindex="-1"]):not([data-dialog-focus-end])',
 ].join(", ");
 
-const getActiveElement = () =>
-  typeof document === "undefined" ? null : document.activeElement;
+const captureOpener = () => {
+  const opener = typeof document === "undefined" ? null : document.activeElement;
+  const trigger = opener?.closest("[data-item-actions]")
+    ?.querySelector("[data-item-actions-trigger]");
+  return { opener, trigger };
+};
 
 export function useDialogFocus(isOpen, onClose) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const [openSnapshot, setOpenSnapshot] = useState(() => ({
     isOpen,
-    opener: isOpen ? getActiveElement() : null,
+    focusReturn: isOpen ? captureOpener() : null,
   }));
 
   if (openSnapshot.isOpen !== isOpen) {
-    setOpenSnapshot({ isOpen, opener: isOpen ? getActiveElement() : null });
+    setOpenSnapshot({ isOpen, focusReturn: isOpen ? captureOpener() : null });
   }
 
   useEffect(() => {
@@ -33,7 +40,7 @@ export function useDialogFocus(isOpen, onClose) {
 
     const dialog = dialogRef.current;
     if (!dialog) return undefined;
-    const opener = openSnapshot.opener;
+    const { opener, trigger } = openSnapshot.focusReturn;
     const getFocusableElements = () =>
       Array.from(dialog.querySelectorAll(focusableSelector));
 
@@ -68,7 +75,7 @@ export function useDialogFocus(isOpen, onClose) {
         last.focus();
       } else if (
         !event.shiftKey &&
-        (document.activeElement === last ||
+        ((document.activeElement === last && !dialog.querySelector("[data-dialog-focus-end]")) ||
           document.activeElement === dialog ||
           !dialog.contains(document.activeElement))
       ) {
@@ -76,15 +83,21 @@ export function useDialogFocus(isOpen, onClose) {
         first.focus();
       }
     };
+    const handleFocusIn = (event) => {
+      if (event.target.matches("[data-dialog-focus-end]")) {
+        (getFocusableElements()[0] || dialog).focus();
+      }
+    };
     document.addEventListener("keydown", handleKeyDown);
+    dialog.addEventListener("focusin", handleFocusIn);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      if (opener instanceof HTMLElement && opener.isConnected) {
-        opener.focus();
-      }
+      dialog.removeEventListener("focusin", handleFocusIn);
+      const target = opener?.isConnected ? opener : trigger;
+      if (target instanceof HTMLElement && target.isConnected) target.focus();
     };
-  }, [isOpen, openSnapshot.opener]);
+  }, [isOpen, openSnapshot.focusReturn]);
 
   return dialogRef;
 }

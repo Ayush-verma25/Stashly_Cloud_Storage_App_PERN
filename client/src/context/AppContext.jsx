@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -176,6 +177,18 @@ export const AppProvider = ({ children }) => {
     [user, currentFolderId, searchQuery, sortBy],
   );
 
+  const activeDrive = useRef(null);
+  useLayoutEffect(() => {
+    activeDrive.current = { folderId: currentFolderId, fetchDriveContent };
+  }, [currentFolderId, fetchDriveContent]);
+
+  const refreshUploadDestination = useCallback((folderId) => {
+    const drive = activeDrive.current;
+    if (drive?.folderId === (folderId || null)) {
+      return drive.fetchDriveContent(folderId);
+    }
+  }, []);
+
   const value = {
     user,
     setUser: setAuthenticatedUser,
@@ -189,6 +202,7 @@ export const AppProvider = ({ children }) => {
     uploadProgress,
     SetUploadeProgress,
     refreshUser,
+    refreshUploadDestination,
     currentFolderId,
     setCurrentFolderId,
     breadsCrumbs,

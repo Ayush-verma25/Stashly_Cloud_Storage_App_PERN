@@ -26,7 +26,7 @@ const Login = ({ mode = "login" }) => {
     setIsLoading(false);
     if (ok) {
       if (isRegister) {
-        navigate("/login", { replace: true });
+        navigate("/login", { replace: true, state: location.state });
         return;
       }
 
