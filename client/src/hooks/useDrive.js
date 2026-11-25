@@ -18,6 +18,7 @@ export function useDrive() {
   const {
     fetchDriveContent,
     refreshUser,
+    refreshUploadDestination,
     currentFolderId,
     isUploading,
     SetIsUploading: setIsUploading,
@@ -66,8 +67,7 @@ export function useDrive() {
       setUploadProgress(100);
       await new Promise((r) => setTimeout(r, 300));
       toast.success(`${data.files.length} file(s) uploaded Successfully!`);
-      await fetchDriveContent(folder_id);
-      await refreshUser();
+      await Promise.all([refreshUploadDestination(folder_id), refreshUser()]);
     } catch (err) {
       clearInterval(interval);
       toast.error(err.response?.data?.error || "File upload failed.");

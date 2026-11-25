@@ -4,7 +4,9 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import { initDB } from "./config/db.js";
 import folderRouter from "./routes/folderRoutes.js";
-import authRouter from "./routes/authRouter.js";
+import authRouter from "./routes/authRoutes.js";
+import fileRouter from "./routes/fileRoutes.js";
+import trashRouter from "./routes/trashRoutes.js";
 
 const requiredEnvironment = ["ORIGINS", "JWT_SECRET", "DATABASE_URL"];
 const missingEnvironment = requiredEnvironment.filter(
@@ -39,6 +41,8 @@ app.get("/", (_req, res) => res.send("Server is Up and Running!"));
 // App API routes
 app.use("/api/auth", authRouter);
 app.use("/api/folders", folderRouter);
+app.use("/api/files", fileRouter);
+app.use("/api/trash", trashRouter);
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {

@@ -207,18 +207,31 @@ api.defaults.adapter = async (config) => {
     } else if (pathname.match(/^\/api\/folders\/[^/]+\/permanent$/) && method === "delete") {
         const id = pathname.split("/")[3];
         const folders = getFolders();
-        saveFolders(
-            folders
-                .filter((f) => f.id !== id)
-                .map((folder) =>
-                    folder.parent_id === id ? { ...folder, parent_id: null } : folder,
-                ),
-        );
-        saveFiles(
-            getFiles().map((file) =>
-                file.folder_id === id ? { ...file, folder_id: null } : file,
-            ),
-        );
+        const folderIds = new Set([id]);
+        const childrenByParent = new Map();
+        for (const folder of folders) {
+            if (!childrenByParent.has(folder.parent_id)) childrenByParent.set(folder.parent_id, []);
+            childrenByParent.get(folder.parent_id).push(folder.id);
+        }
+        for (const folderId of folderIds) {
+            for (const childId of childrenByParent.get(folderId) || []) folderIds.add(childId);
+        }
+
+        const files = getFiles();
+        const deletedFiles = files.filter((file) => folderIds.has(file.folder_id));
+        const fileIds = new Set(deletedFiles.map((file) => file.id));
+        saveFolders(folders.filter((folder) => !folderIds.has(folder.id)));
+        saveFiles(files.filter((file) => !fileIds.has(file.id)));
+        saveShares(getShares().filter((share) =>
+            !(share.resource_type === "folder" ? folderIds : fileIds).has(share.resource_id),
+        ));
+
+        const user = getUser();
+        if (user && deletedFiles.length > 0) {
+            const freed = deletedFiles.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+            user.storage_used = Math.max(0, (Number(user.storage_used) || 0) - freed);
+            saveUser(user);
+        }
         responseData = { message: "Folder permanently deleted" };
     } else if (pathname.match(/^\/api\/folders\/[^/]+$/) && method === "get") {
         const id = pathname.split("/").pop();

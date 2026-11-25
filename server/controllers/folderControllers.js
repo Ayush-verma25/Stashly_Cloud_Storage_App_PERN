@@ -85,7 +85,7 @@ export const getFolderDetails = async (req, res) => {
     const ancestorIds = folder.path || [];
     const ancestors =
       ancestorIds.length > 0
-        ? await sql`SELECT id FROm foldres WHERE id = ANY(${ancestorIds}::uuid[])`
+        ? await sql`SELECT id, name FROM folders WHERE id = ANY(${ancestorIds}::uuid[])`
         : [];
 
     // Preserve path order
@@ -110,17 +110,17 @@ export const getFolderDetails = async (req, res) => {
 // PATCH /api/folders/:id/rename
 export const renameFolder = async (req, res) => {
   try {
-    const { name } = res.body;
+    const { name } = req.body || {};
 
-    if (!name?.trim()) {
+    if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ error: "Folder Name is Required." });
     }
 
     const [folder] =
-      await sql`UPDATE folders SET name = ${name.trim()}, updated_at = NOW() WHERE id = ${req.parems.id} AND owner_id = ${req.user.id} AND is_trashed = false RETURNING *`;
+      await sql`UPDATE folders SET name = ${name.trim()}, updated_at = NOW() WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false RETURNING *`;
 
     if (!folder) {
-      res.status(404).json({ error: "Folder not Found." });
+      return res.status(404).json({ error: "Folder not Found." });
     }
 
     return res.status(200).json({ folder });
@@ -169,32 +169,22 @@ export const moveFolder = async (req, res) => {
       newPath = [...targetPath, targetFolder.id];
     }
 
-    // Update moved folder
-    await sql`
-            SELECT folders
-            SET parent_id = ${targetParent || null}, path = ${newPath}, updated_at = NOW()
-            WHERE id = ${folderId}`;
-
-    // Update all decendents path
-    const descendents = await sql`
-            SELECT id, path FROM folders
-            WHERE ${folderId} = ANY(path::text[]) AND  owner_id = ${req.user.id}`;
-
-    if (descendents.length > 0) {
-      await Promise.all(
-        descendents.map((desc) => {
-          const folderIndex = desc.path.folderIndex((p) => p === folderId);
-          const subPath =
-            folderIndex !== -1 ? desc.path.slice(folderIndex + 1) : [];
-          const updatedPath = [...newPath, folderId, ...subPath];
-          return sql`
-                        UPDATE folders SET path = ${updatedPath}, updated_at = NOW()
-                        WHERE id = ${desc.id}`;
-        }),
-      );
-    }
-
-    const [updated] = await sql`SELECT * FROM folders WHERE id = ${folderId}`;
+    const descendants = await sql`
+      SELECT id, path FROM folders
+      WHERE ${folderId} = ANY(path::text[]) AND owner_id = ${req.user.id}`;
+    const [[updated]] = await sql.transaction([
+      sql`
+        UPDATE folders
+        SET parent_id = ${targetParent || null}, path = ${newPath}, updated_at = NOW()
+        WHERE id = ${folderId}
+        RETURNING *`,
+      ...descendants.map((descendant) => {
+        const folderIndex = descendant.path.findIndex((id) => id === folderId);
+        const updatedPath = [...newPath, folderId, ...descendant.path.slice(folderIndex + 1)];
+        return sql`UPDATE folders SET path = ${updatedPath}, updated_at = NOW()
+                   WHERE id = ${descendant.id}`;
+      }),
+    ]);
     return res.status(200).json({ folder: updated });
   } catch (error) {
     return res.status(500).json({ error: error.message });
