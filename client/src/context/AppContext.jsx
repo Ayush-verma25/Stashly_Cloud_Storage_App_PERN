@@ -32,6 +32,12 @@ export const AppProvider = ({ children }) => {
   const [breadsCrumbs, setBreadCrumbs] = useState(ROOT_BREADCRUMB);
   const [folders, setFolders] = useState([]);
   const [files, setFiles] = useState([]);
+  const [filesPagination, setFilesPagination] = useState({
+    page: 1,
+    limit: 50,
+    totalFiles: 0,
+    totalPages: 0,
+  });
   const [isDriveLoading, setIsDriveLoading] = useState(false);
   const driveRequestId = useRef(0);
 
@@ -43,6 +49,7 @@ export const AppProvider = ({ children }) => {
       setBreadCrumbs(ROOT_BREADCRUMB);
       setFolders([]);
       setFiles([]);
+      setFilesPagination({ page: 1, limit: 50, totalFiles: 0, totalPages: 0 });
       setIsDriveLoading(false);
     }
     userRef.current = nextUser;
@@ -63,10 +70,13 @@ export const AppProvider = ({ children }) => {
         return data.user;
       }
       return userRef.current;
-    } catch {
+    } catch (error) {
       if (generation === authGeneration.current) {
-        setAuthenticatedUser(null);
-        return null;
+        if (error.response?.status === 401) {
+          setAuthenticatedUser(null);
+          return null;
+        }
+        toast.error("Unable to verify your session. Check your connection and retry.");
       }
       return userRef.current;
     }
@@ -137,16 +147,23 @@ export const AppProvider = ({ children }) => {
   };
 
   const fetchDriveContent = useCallback(
-    async (folderId = currentFolderId, search = searchQuery, sort = sortBy) => {
+    async (
+      folderId = currentFolderId,
+      search = searchQuery,
+      sort = sortBy,
+      page = 1,
+    ) => {
       if (!user) return;
       const requestId = ++driveRequestId.current;
       setIsDriveLoading(true);
       try {
         const parentParam = folderId || "null";
         const [folderRes, fileRes, detailRes] = await Promise.all([
-          api.get("/api/folders", { params: { parent_id: parentParam } }),
+          api.get("/api/folders", {
+            params: { parent_id: parentParam, search },
+          }),
           api.get("/api/files", {
-            params: { folder_id: parentParam, search, sort },
+            params: { folder_id: parentParam, search, sort, page },
           }),
           folderId ? api.get(`/api/folders/${folderId}`) : null,
         ]);
@@ -154,14 +171,18 @@ export const AppProvider = ({ children }) => {
         if (requestId !== driveRequestId.current) return;
 
         setFolders(folderRes.data.folders || []);
-        setFiles(fileRes?.data?.files || fileRes?.data?.filse || []);
+        setFiles(fileRes?.data?.files || []);
+        setFilesPagination(
+          fileRes?.data?.pagination || {
+            page: 1,
+            limit: 50,
+            totalFiles: 0,
+            totalPages: 0,
+          },
+        );
         setBreadCrumbs(
           detailRes?.data?.folder
-            ? [
-                ...ROOT_BREADCRUMB,
-                ...(detailRes.data.breadcrumbs || []),
-                { id: detailRes.data.folder.id, name: detailRes.data.folder.name },
-              ]
+            ? detailRes.data.breadcrumbs || ROOT_BREADCRUMB
             : ROOT_BREADCRUMB,
         );
       } catch {
@@ -210,6 +231,7 @@ export const AppProvider = ({ children }) => {
     setFolders,
     files,
     setFiles,
+    filesPagination,
     isDriveLoading,
     fetchDriveContent,
     searchQuery,

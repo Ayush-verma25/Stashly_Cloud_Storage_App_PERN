@@ -3,7 +3,7 @@ import { emptyTrashHirarchy } from "../services/storageService.js";
 
 //GET all trashed files and folders for user
 // GET /api/trash
-export const getTrashItems = async (req, res) => {
+export const getTrashItems = async (req, res, next) => {
   try {
     const [files, folders] = await Promise.all([
       sql`
@@ -18,17 +18,17 @@ export const getTrashItems = async (req, res) => {
 
     return res.status(200).json({ files, folders });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Empty user trash (permanentely delete all trashed files)
 //POST /api/trash/empty
-export const emptyTrash = async (req, res) => {
+export const emptyTrash = async (req, res, next) => {
   try {
     await emptyTrashHirarchy(req.user.id);
     return res.status(200).json({ message: "Trash emptied successfully!" });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };

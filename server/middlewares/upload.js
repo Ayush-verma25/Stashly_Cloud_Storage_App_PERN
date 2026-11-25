@@ -1,10 +1,12 @@
 import multer from "multer";
 
-const storage = multer.diskStorage();
+const storage = multer.memoryStorage();
 
-const maxFileSize = process.env.MAX_FILE_SIZE
-  ? Number(process.env.MAX_FILE_SIZE)
-  : 104857600; // 100MB default
+const maxFileSize = Number(process.env.MAX_FILE_SIZE ?? 104857600);
+
+if (!Number.isSafeInteger(maxFileSize) || maxFileSize < 1) {
+  throw new Error("MAX_FILE_SIZE must be a positive integer number of bytes.");
+}
 
 export const upload = multer({
   storage,

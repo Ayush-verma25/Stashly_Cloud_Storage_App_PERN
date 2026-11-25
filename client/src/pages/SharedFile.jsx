@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Spinner } from "../components/ui/Spinner";
-import { copyShareLink, getFileIcon } from "../assets/assets";
+import { getFileIcon } from "../assets/assets";
 import { format } from "date-fns";
 import api from "../config/api";
 import toast from "react-hot-toast";
@@ -38,9 +38,14 @@ const SharedFile = () => {
   }, []);
 
   const handleCopy = async (token) => {
-    copyShareLink(token);
-    setCopiedToken(token);
-    setTimeout(() => setCopiedToken(null), 2000);
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/s/${token}`);
+      setCopiedToken(token);
+      toast.success("Link copied to clipboard.");
+      window.setTimeout(() => setCopiedToken(null), 2000);
+    } catch {
+      toast.error("Could not copy the share link.");
+    }
   };
 
   const handleDeleteShare = async () => {

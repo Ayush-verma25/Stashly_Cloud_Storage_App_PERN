@@ -4,19 +4,20 @@ import { Modal } from "../ui/Modal";
 import { FolderIcon, HardDriveIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import api from "../../config/api";
+import toast from "react-hot-toast";
 
 const MoveModal = ({ item, isOpen, onClose }) => {
   const [availableFolder, setAvailableFolder] = useState([]);
   const [selectedFolderId, setSelectedFolderId] = useState(null);
   const [isMoving, setIsMoving] = useState(false);
+  const [isLoadingFolders, setIsLoadingFolders] = useState(false);
   const { moveItem } = useDrive();
   const itemId = item?.id;
   const itemType = item?.item_type;
-  const parentId = item?.parent_id ?? null;
+  const parentId = item?.parent_id ?? item?.folder_id ?? null;
 
   useEffect(() => {
     let isCancelled = false;
-    setAvailableFolder([]);
     if (!isOpen || itemId == null) {
       return () => {
         isCancelled = true;
@@ -24,29 +25,25 @@ const MoveModal = ({ item, isOpen, onClose }) => {
     }
 
     setSelectedFolderId(parentId);
+    setIsLoadingFolders(true);
 
-    Promise.all([api.get("/api/folders"), api.get("/api/trash")])
-      .then(([response, trashResponse]) => {
-        const folders = response?.data?.folders || [];
-        const allFolders = [...folders, ...(trashResponse.data?.folders || [])];
-        const parents = new Map(allFolders.map((folder) => [folder.id, folder.parent_id]));
-        const isDescendant = (folder) => {
-          const visited = new Set();
-          let id = folder.id;
-          while (id != null && !visited.has(id)) {
-            if (id === itemId) return true;
-            visited.add(id);
-            id = parents.get(id);
-          }
-          return false;
-        };
-        const filtered = folders.filter(
-          (folder) => itemType !== "folder" || !isDescendant(folder),
+    api.get("/api/folders", { params: { all: true } })
+      .then(({ data }) => {
+        const folders = data?.folders || [];
+        const filtered = folders.filter((folder) =>
+          itemType !== "folder" ||
+          (folder.id !== itemId && !folder.path?.includes(itemId)),
         );
         if (!isCancelled) setAvailableFolder(filtered);
       })
-      .catch(() => {
-        if (!isCancelled) setAvailableFolder([]);
+      .catch((error) => {
+        if (!isCancelled) {
+          setAvailableFolder([]);
+          toast.error(error.response?.data?.error || "Could not load folders.");
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLoadingFolders(false);
       });
 
     return () => {
@@ -88,7 +85,9 @@ const MoveModal = ({ item, isOpen, onClose }) => {
             <span>My Drive (Root)</span>
           </button>
 
-          {availableFolder.map((folder) => (
+          {isLoadingFolders ? (
+            <p className="px-3 py-4 text-center text-xs text-slate-500">Loading folders...</p>
+          ) : availableFolder.map((folder) => (
             <button
               key={folder.id}
               onClick={() => setSelectedFolderId(folder.id)}

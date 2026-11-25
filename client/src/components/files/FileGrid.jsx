@@ -13,7 +13,16 @@ const FileGrid = ({
   onMoveItem,
   onDeleteItem,
 }) => {
-  const { folders, files, isDriveLoading } = useApp();
+  const {
+    folders,
+    files,
+    filesPagination,
+    isDriveLoading,
+    currentFolderId,
+    searchQuery,
+    sortBy,
+    fetchDriveContent,
+  } = useApp();
 
   if (isDriveLoading) {
     return (
@@ -28,7 +37,16 @@ const FileGrid = ({
   const hasFiles = files && files.length > 0;
 
   if (!hasFolders && !hasFiles) {
-    return <EmptyState />;
+    return (
+      <EmptyState
+        title={searchQuery ? "No matching items" : undefined}
+        description={
+          searchQuery
+            ? "Try a different search term."
+            : "Upload files or create a folder to get started."
+        }
+      />
+    );
   }
 
   return (
@@ -85,6 +103,49 @@ const FileGrid = ({
             ))}
           </div>
         </div>
+      )}
+      {filesPagination.totalPages > 1 && (
+        <nav
+          aria-label="File pages"
+          className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"
+        >
+          <p className="text-xs text-slate-500">
+            Page {filesPagination.page} of {filesPagination.totalPages} ·{" "}
+            {filesPagination.totalFiles} files
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={filesPagination.page <= 1}
+              onClick={() =>
+                fetchDriveContent(
+                  currentFolderId,
+                  searchQuery,
+                  sortBy,
+                  filesPagination.page - 1,
+                )
+              }
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={filesPagination.page >= filesPagination.totalPages}
+              onClick={() =>
+                fetchDriveContent(
+                  currentFolderId,
+                  searchQuery,
+                  sortBy,
+                  filesPagination.page + 1,
+                )
+              }
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </nav>
       )}
     </div>
   );

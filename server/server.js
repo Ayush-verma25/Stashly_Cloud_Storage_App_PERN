@@ -2,20 +2,37 @@ import express from "express";
 import "./config/env.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { initDB } from "./config/db.js";
+import { initDB, sql } from "./config/db.js";
 import folderRouter from "./routes/folderRoutes.js";
 import authRouter from "./routes/authRoutes.js";
 import fileRouter from "./routes/fileRoutes.js";
 import trashRouter from "./routes/trashRoutes.js";
 import shareRouter from "./routes/shareRoutes.js";
+import { errorHandler } from "./middlewares/errorHandler.js";
+import { verifyOrigin } from "./middlewares/verifyOrigin.js";
 
-const requiredEnvironment = ["ORIGINS", "JWT_SECRET", "DATABASE_URL"];
+const requiredEnvironment = [
+  "ORIGINS",
+  "JWT_SECRET",
+  "DATABASE_URL",
+  "AWS_REGION",
+  "AWS_S3_BUCKET",
+];
 const missingEnvironment = requiredEnvironment.filter(
   (name) => !process.env[name]?.trim(),
 );
 if (missingEnvironment.length) {
   console.error(
     `Missing required environment variable(s): ${missingEnvironment.join(", ")}`,
+  );
+  process.exit(1);
+}
+if (
+  Boolean(process.env.AWS_ACCESS_KEY_ID) !==
+  Boolean(process.env.AWS_SECRET_ACCESS_KEY)
+) {
+  console.error(
+    "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be configured together.",
   );
   process.exit(1);
 }
@@ -27,10 +44,36 @@ if (!allowedOrigins.length) {
   console.error("ORIGINS must contain at least one valid origin.");
   process.exit(1);
 }
+const invalidOrigins = allowedOrigins.filter((origin) => {
+  try {
+    const parsed = new URL(origin);
+    return (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.origin !== origin ||
+      parsed.username !== "" ||
+      parsed.password !== ""
+    );
+  } catch {
+    return true;
+  }
+});
+if (invalidOrigins.length) {
+  console.error("ORIGINS must contain only exact HTTP(S) origins without paths.");
+  process.exit(1);
+}
 
 const app = express();
+app.disable("x-powered-by");
+
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "DENY");
+  next();
+});
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(verifyOrigin);
 
 // Middleware
 app.use(cookieParser());
@@ -38,6 +81,14 @@ app.use(express.json({ limit: "10kb" }));
 
 // Root API
 app.get("/", (_req, res) => res.send("Server is Up and Running!"));
+app.get("/healthz", async (_req, res, next) => {
+  try {
+    await sql`SELECT 1`;
+    return res.status(200).json({ status: "ok" });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 // App API routes
 app.use("/api/auth", authRouter);
@@ -46,12 +97,8 @@ app.use("/api/files", fileRouter);
 app.use("/api/trash", trashRouter);
 app.use("/api/shares", shareRouter);
 
-// Error handling middleware
-app.use((err, _req, res, _next) => {
-  res.status(err.status || 500).json({
-    error: err.message || "Something went wrong!",
-  });
-});
+app.use((_req, res) => res.status(404).json({ error: "Not found." }));
+app.use(errorHandler);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 8000;
 if (!Number.isInteger(port) || port < 1 || port > 65535) {

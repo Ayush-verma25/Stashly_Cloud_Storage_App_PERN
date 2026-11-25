@@ -1,28 +1,51 @@
 import { lockOwner, sql, withTransaction } from "../config/db.js";
 import path from "path";
 import crypto from "crypto";
-import { deleteMultipleFromStorage, getSignedFileURL, uploadToStorage } from "../utils/s3Helper.js";
+import {
+  deleteMultipleFromStorage,
+  getSignedFileURL,
+  uploadToStorage,
+} from "../utils/s3Helper.js";
 import {
   adjustUserStorage,
   permanentDeleteFileRecord,
 } from "../services/storageService.js";
+import { normalizeResourceName } from "../utils/validation.js";
 
 const SORT_MAP = {
   name_asc: "name ASC",
   name_desc: "name DESC",
   date_asc: "created_at ASC",
-  date_desc: "created_at DeSC",
+  date_desc: "created_at DESC",
+  size_asc: "size ASC",
+  size_desc: "size DESC",
 };
 
 const quotaError = (limit) =>
-  `Upload exceeds storage quota limit of ${(Number(limit) / (1024 ** 3)).toFixed(1)} GB.`;
+  `Upload exceeds storage quota limit of ${(Number(limit) / 1024 ** 3).toFixed(1)} GB.`;
 
 // Upload file(s)
 // POST /api/files/upload
-export const uploadFiles = async (req, res) => {
+export const uploadFiles = async (req, res, next) => {
   try {
     if (!req.files?.length) {
       return res.status(400).json({ error: "No files uploaded!" });
+    }
+    if (
+      req.files.some((file) => {
+        const name = normalizeResourceName(file.originalname);
+        return (
+          !name ||
+          Array.from(file.originalname).length > 255 ||
+          !file.mimetype ||
+          Array.from(file.mimetype || "").length > 128 ||
+          file.mimetype?.includes("\0")
+        );
+      })
+    ) {
+      return res.status(400).json({
+        error: "Each file must have a valid name and content type.",
+      });
     }
 
     const folderId = req.body.folder_id || req.body.folderId;
@@ -44,7 +67,9 @@ export const uploadFiles = async (req, res) => {
       Number(req.user.storage_used) + totalNewBytes >
       Number(req.user.storage_limit)
     ) {
-      return res.status(400).json({ error: quotaError(req.user.storage_limit) });
+      return res
+        .status(400)
+        .json({ error: quotaError(req.user.storage_limit) });
     }
 
     const uploadedKeys = [];
@@ -52,28 +77,37 @@ export const uploadFiles = async (req, res) => {
     let updatedStorage;
     let exceededLimit;
     try {
-      const uploads = await Promise.allSettled(req.files.map(async (file) => {
-        const fileExt = path.extname(file.originalname);
-        const randomString = crypto.randomBytes(8).toString("hex");
-        const key = `users/${req.user.id}/${Date.now()}_${randomString}${fileExt}`;
-        await uploadToStorage(file.buffer, key, file.mimetype);
-        uploadedKeys.push(key);
-        return { file, key };
-      }));
+      const uploads = await Promise.allSettled(
+        req.files.map(async (file) => {
+          const fileExt = path.extname(file.originalname);
+          const randomString = crypto.randomBytes(8).toString("hex");
+          const key = `users/${req.user.id}/${Date.now()}_${randomString}${fileExt}`;
+          await uploadToStorage(file.buffer, key, file.mimetype);
+          uploadedKeys.push(key);
+          return { file, key };
+        }),
+      );
 
-      const failedUpload = uploads.find((upload) => upload.status === "rejected");
+      const failedUpload = uploads.find(
+        (upload) => upload.status === "rejected",
+      );
       if (failedUpload) throw failedUpload.reason;
 
       ({ createFiles, updatedStorage } = await withTransaction(async (tx) => {
         const owner = await lockOwner(tx, req.user.id);
         if (!owner) throw new Error("Upload owner not found.");
-        if (Number(owner.storage_used) + totalNewBytes > Number(owner.storage_limit)) {
+        if (
+          Number(owner.storage_used) + totalNewBytes >
+          Number(owner.storage_limit)
+        ) {
           exceededLimit = owner.storage_limit;
           throw new Error(quotaError(exceededLimit));
         }
 
         const createFiles = [];
-        for (const { value: { file, key } } of uploads) {
+        for (const {
+          value: { file, key },
+        } of uploads) {
           const [row] = await tx`
             INSERT INTO files (name, original_name, mime_type, size, s3_key, folder_id, owner_id)
             VALUES (${file.originalname}, ${file.originalname}, ${file.mimetype}, ${file.size},
@@ -81,7 +115,11 @@ export const uploadFiles = async (req, res) => {
           createFiles.push(row);
         }
 
-        const updatedStorage = await adjustUserStorage(req.user.id, totalNewBytes, tx);
+        const updatedStorage = await adjustUserStorage(
+          req.user.id,
+          totalNewBytes,
+          tx,
+        );
         return { createFiles, updatedStorage };
       }));
     } catch (error) {
@@ -92,15 +130,17 @@ export const uploadFiles = async (req, res) => {
       throw error;
     }
 
-    return res.status(201).json({ files: createFiles, storage_used: updatedStorage });
+    return res
+      .status(201)
+      .json({ files: createFiles, storage_used: updatedStorage });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Get Files in folders
 // GET /api/files
-export const getFiles = async (req, res) => {
+export const getFiles = async (req, res, next) => {
   try {
     const {
       folder,
@@ -112,7 +152,7 @@ export const getFiles = async (req, res) => {
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.max(1, parseInt(limit, 10) || 50);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
     const offset = (pageNum - 1) * limitNum;
     const orderBy = SORT_MAP[sort] || SORT_MAP.name_asc;
 
@@ -149,13 +189,13 @@ export const getFiles = async (req, res) => {
       },
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Get presignrd preview/download URl for a file
 // GET /api/files/:id/preview
-export const getFilePreviewUrl = async (req, res) => {
+export const getFilePreviewUrl = async (req, res, next) => {
   try {
     const [file] = await sql`
         SELECT * FROM files WHERE id = ${req.params.id} AND owner_id = ${req.user.id}`;
@@ -167,39 +207,40 @@ export const getFilePreviewUrl = async (req, res) => {
     const downloadUrl = await getSignedFileURL(file.s3_key);
     return res.status(200).json({ url: downloadUrl, file });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Rename file
 // PATCH /api/files/:id/rename
-export const renameFile = async (req, res) => {
+export const renameFile = async (req, res, next) => {
   try {
-    const { name } = req.body;
-    if (!name?.trim()) {
-      return res.status(400).json({ error: "File name is required." });
+    const normalizedName = normalizeResourceName(req.body?.name);
+    if (!normalizedName) {
+      return res.status(400).json({ error: "File name must be 1-255 characters." });
     }
 
     const [file] = await sql`
         UPDATE files
-        SET name = ${name.trim()}, updated_at = NOW()
+        SET name = ${normalizedName}, updated_at = NOW()
         WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false RETURNING *`;
 
     if (!file) {
-      return res.status(500).json({ error: "File Not Found." });
+      return res.status(404).json({ error: "File not found." });
     }
 
     return res.status(200).json({ file });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Move file to Different folders
 // PATCH /api/files/:id/move
-export const moveFile = async (req, res) => {
+export const moveFile = async (req, res, next) => {
   try {
-    const targetFolder = req.body.target_folder ?? req.body.targetFolder;
+    const body = req.body || {};
+    const targetFolder = body.target_folder ?? body.targetFolder;
 
     if (targetFolder) {
       const [destFolder] = await sql`
@@ -222,13 +263,13 @@ export const moveFile = async (req, res) => {
 
     return res.status(200).json({ file });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // soft Delete file
 // DELETE /api/files/:id
-export const softDeleteFile = async (req, res) => {
+export const softDeleteFile = async (req, res, next) => {
   try {
     const [[file]] = await sql.transaction([
       sql`
@@ -250,13 +291,13 @@ export const softDeleteFile = async (req, res) => {
 
     return res.status(200).json({ message: "File moved to Trash!" });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Restore Files from Trash
 // POST /api/files/:id/restore
-export const restoreFile = async (req, res) => {
+export const restoreFile = async (req, res, next) => {
   try {
     const [file] = await sql`
         UPDATE files
@@ -269,13 +310,13 @@ export const restoreFile = async (req, res) => {
 
     return res.status(200).json({ message: "File Restored from Trash." });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 //Permanently Delete file
 // DELETE /api/files/:id/permanent
-export const permanentDeleteFile = async (req, res) => {
+export const permanentDeleteFile = async (req, res, next) => {
   try {
     const deleted = await permanentDeleteFileRecord(req.params.id, req.user.id);
     if (!deleted) {
@@ -284,6 +325,6 @@ export const permanentDeleteFile = async (req, res) => {
 
     return res.status(200).json({ message: "File Permanently Deleted!" });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };

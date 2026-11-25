@@ -112,10 +112,12 @@ export const permanentDeleteFileRecord = (fileId, ownerId) =>
   withTransaction(async (tx) => {
     await lockOwner(tx, ownerId);
     const files = await tx`
-      SELECT id, s3_key FROM files WHERE id = ${fileId} AND owner_id = ${ownerId} FOR UPDATE`;
+      SELECT id, s3_key FROM files
+      WHERE id = ${fileId} AND owner_id = ${ownerId} AND is_trashed = true
+      FOR UPDATE`;
     if (!files.length) return false;
 
-    await deleteLockedRecords(tx, files, [], ownerId, false);
+    await deleteLockedRecords(tx, files, [], ownerId, true);
     return true;
   });
 

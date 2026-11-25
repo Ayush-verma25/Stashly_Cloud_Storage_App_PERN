@@ -2,7 +2,7 @@ import { FolderOpenIcon } from "lucide-react";
 
 export function EmptyState({
     title = "No items found",
-    description = "Drag & drop files here or click New to get started.",
+    description = "Upload files or create a folder to get started.",
     icon: Icon = FolderOpenIcon,
     action,
 }) {

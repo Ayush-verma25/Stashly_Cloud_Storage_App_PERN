@@ -22,7 +22,7 @@ export const uploadToStorage = async (fileBuffer, key, mimeType) => {
 
 export const getSignedFileURL = async (key) => {
   const command = new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key });
-  return getSignedUrl(client, command, { expiresIn: 36000 });
+  return getSignedUrl(client, command, { expiresIn: 900 });
 };
 
 export const deleteFromStorage = async (key) => {
