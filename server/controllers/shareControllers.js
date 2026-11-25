@@ -135,7 +135,7 @@ export const accessShareLink = async (req, res, next) => {
 
     if (shareLink.resource_type === "file") {
       const [file] =
-        await sql`SELECT id, name, mime_type, size, created_at, folder_id, s3_key FROM files WHERE id = ${shareLink.resource_id}`;
+        await sql`SELECT id, name, mime_type, size, created_at, folder_id, s3_key FROM files WHERE id = ${shareLink.resource_id} AND is_trashed = false`;
       if (!file || file.is_trashed) {
         return res.status(404).json({ error: "File is no longer available!" });
       }
