@@ -28,6 +28,9 @@ const deleteShareLinks = (resourceIds, ownerId) => sql`
   DELETE FROM share_links
   WHERE resource_id = ANY(${resourceIds}::uuid[]) AND owner_id = ${ownerId}`;
 
+export const cleanupShareLinks = (fileIds, folderIds, ownerId) =>
+  deleteShareLinks([...fileIds, ...folderIds], ownerId);
+
 // Soft delete a folder and all its contents (recursive subfolders & files).
 export const softDeleteFolderHierarchy = async (folderId, ownerId) => {
   const allFoldersIds = await getFolderHierarchyIds(folderId, ownerId);
@@ -99,7 +102,7 @@ export const permanentDeleteFolderHierarchy = async (folderId, ownerId) => {
 export const permanentDeleteFileRecord = async (file, ownerId) => {
   await Promise.all([
     deleteFromStorage(file.s3_key),
-    cleanupShareLinks([file.id], []),
+    cleanupShareLinks([file.id], [], ownerId),
     sql`DELETE FROM files WHERE id = ${file.id}`,
   ]);
   await adjustUserStorage(ownerId, -Number(file.size));
@@ -122,7 +125,7 @@ export const emptyTrashHirarchy = async (ownerId) => {
 
   await Promise.all([
     s3keys.length > 0 ? deleteMultipleFromStorage(s3keys) : Promise.resolve(),
-    cleanupShareLinks(trashedFileIds, trashedFolderIds),
+    cleanupShareLinks(trashedFileIds, trashedFolderIds, ownerId),
     sql`DELETE FROM files WHERE owner_id = ${ownerId} AND is_trashed = true`,
     sql`DELETE FROM folders WHERE owner_id = ${ownerId} AND is_trashed = true`,
   ]);

@@ -218,7 +218,7 @@ export const softDeleteFile = async (req, res) => {
       return res.status(404).json({ error: "File not Found!" });
     }
 
-    await cleanupShareLinks([file.id], []);
+    await cleanupShareLinks([file.id], [], req.user.id);
     return res.status(200).json({ message: "File moved to Trash!" });
   } catch (error) {
     return res.status(500).json({ error: error.message });
