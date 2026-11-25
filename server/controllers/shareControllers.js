@@ -114,6 +114,7 @@ export const getUserShareLink = async (req, res, next) => {
 export const accessShareLink = async (req, res, next) => {
   try {
     const { token } = req.params;
+    res.set("Cache-Control", "no-store");
 
     const [shareLink] =
       await sql`SELECT * FROM share_links WHERE token = ${token}`;
@@ -136,7 +137,7 @@ export const accessShareLink = async (req, res, next) => {
     if (shareLink.resource_type === "file") {
       const [file] =
         await sql`SELECT id, name, mime_type, size, created_at, folder_id, s3_key FROM files WHERE id = ${shareLink.resource_id} AND is_trashed = false`;
-      if (!file || file.is_trashed) {
+      if (!file) {
         return res.status(404).json({ error: "File is no longer available!" });
       }
 

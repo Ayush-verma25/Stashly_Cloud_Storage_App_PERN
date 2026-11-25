@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { protect } from "../middlewares/auth.js";
-import { upload } from "../middlewares/upload.js";
+import { withUpload } from "../middlewares/upload.js";
 import { getFilePreviewUrl, getFiles, moveFile, permanentDeleteFile, renameFile, restoreFile, softDeleteFile, uploadFiles } from "../controllers/fileController.js";
 
 const fileRouter = Router();
@@ -9,7 +9,7 @@ const fileRouter = Router();
 // ALl file routes require authentication 
 fileRouter.use(protect);
 
-fileRouter.post("/upload", upload.array("files", 10), uploadFiles)
+fileRouter.post("/upload", withUpload(uploadFiles))
 fileRouter.get("/", getFiles)
 fileRouter.get("/:id/preview", getFilePreviewUrl)
 fileRouter.patch("/:id/rename", renameFile)

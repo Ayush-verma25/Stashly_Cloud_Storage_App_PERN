@@ -16,9 +16,8 @@ const isFolderItem = (item, itemType) => getItemType(item, itemType) === "folder
 
 export function useDrive() {
   const {
-    fetchDriveContent,
     refreshUser,
-    refreshUploadDestination,
+    refreshDrive,
     currentFolderId,
     isUploading,
     SetIsUploading: setIsUploading,
@@ -61,7 +60,7 @@ export function useDrive() {
       setUploadProgress(100);
       await new Promise((r) => setTimeout(r, 300));
       toast.success(`${data.files.length} file(s) uploaded Successfully!`);
-      await Promise.all([refreshUploadDestination(folder_id), refreshUser()]);
+      await Promise.all([refreshDrive(folder_id), refreshUser()]);
     } catch (err) {
       toast.error(err.response?.data?.error || "File upload failed.");
     } finally {
@@ -77,7 +76,7 @@ export function useDrive() {
       api.post("/api/folders", { name, parent_id }),
       "Folder created.",
       "Error creating folder.",
-      () => fetchDriveContent(parent_id),
+      () => refreshDrive(parent_id),
     );
 
   // Polymorphic operations (accepts file or folder item / id)
@@ -95,7 +94,7 @@ export function useDrive() {
       api.patch(`/api/${endpoint}/${id}/rename`, { name: newName }),
       `${isFolder ? "Folder" : "File"} renamed.`,
       "Error renaming item.",
-      () => fetchDriveContent(),
+      () => refreshDrive(currentFolderId),
     );
   };
 
@@ -115,7 +114,7 @@ export function useDrive() {
       api.patch(`/api/${endpoint}/${id}/move`, payload),
       `${isFolder ? "Folder" : "File"} moved.`,
       "Error moving item.",
-      () => fetchDriveContent(),
+      () => refreshDrive(currentFolderId),
     );
   };
 
@@ -132,7 +131,7 @@ export function useDrive() {
       api.delete(`/api/${endpoint}/${id}`),
       `${isFolder ? "Folder" : "File"} moved to Trash.`,
       "Error deleting item.",
-      () => fetchDriveContent(),
+      () => refreshDrive(currentFolderId),
     );
   };
 

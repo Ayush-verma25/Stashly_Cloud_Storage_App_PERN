@@ -1,4 +1,5 @@
 node_modules
 dist
 .env
-tests
+tests/*
+!tests/*.test.js
