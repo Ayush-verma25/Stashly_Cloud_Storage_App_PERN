@@ -4,16 +4,18 @@ import {
   restoreFolderHierarchy,
   softDeleteFolderHierarchy,
 } from "../services/storageService.js";
+import { normalizeResourceName } from "../utils/validation.js";
 
 // creating a New Folder
 // POST /api/folders
-export const createFolder = async (req, res) => {
+export const createFolder = async (req, res, next) => {
   try {
-    const { name, parent, parent_id } = req.body;
+    const { name, parent, parent_id } = req.body || {};
     const targetParent = parent_id ?? parent;
+    const normalizedName = normalizeResourceName(name);
 
-    if (!name?.trim()) {
-      return res.status(400).json({ error: "Folder name is Required." });
+    if (!normalizedName) {
+      return res.status(400).json({ error: "Folder name must be 1-255 characters." });
     }
 
     const result = await withTransaction(async (tx) => {
@@ -32,14 +34,14 @@ export const createFolder = async (req, res) => {
 
       const [existing] = await tx`
         SELECT id FROM folders
-        WHERE name = ${name.trim()} AND parent_id IS NOT DISTINCT FROM ${targetParent || null}
+        WHERE name = ${normalizedName} AND parent_id IS NOT DISTINCT FROM ${targetParent || null}
           AND owner_id = ${req.user.id} AND is_trashed = false`;
 
       if (existing) return { status: 400, error: "A folder with this name already exists here." };
 
       const [folder] = await tx`
         INSERT INTO folders (name, parent_id, owner_id, path)
-        VALUES (${name.trim()}, ${targetParent || null}, ${req.user.id}, ${folderPath})
+        VALUES (${normalizedName}, ${targetParent || null}, ${req.user.id}, ${folderPath})
         RETURNING *`;
       return { folder };
     });
@@ -47,31 +49,43 @@ export const createFolder = async (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error });
     return res.status(201).json(result);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Get subfolder in a folder
 // GET /api/folders
-export const getFolders = async (req, res) => {
+export const getFolders = async (req, res, next) => {
   try {
     const parent = req.query.parent_id ?? req.query.parent;
 
     const parentId = !parent || parent === "null" ? null : parent;
+    const search = req.query.search?.trim();
+    const folders = search
+      ? await sql`
+            SELECT * FROM folders
+            WHERE owner_id = ${req.user.id} AND is_trashed = false
+              AND name ILIKE ${`%${search}%`}
+            ORDER BY name ASC`
+      : req.query.all === "true"
+        ? await sql`
+            SELECT * FROM folders
+            WHERE owner_id = ${req.user.id} AND is_trashed = false
+            ORDER BY path, name ASC`
+        : await sql`
+            SELECT * FROM folders
+            WHERE owner_id = ${req.user.id} AND parent_id IS NOT DISTINCT FROM ${parentId} AND is_trashed = false
+            ORDER BY name ASC`;
 
-    const folders = await sql`
-        SELECT * FROM folders
-        WHERE owner_id = ${req.user.id} AND parent_id IS NOT DISTINCT FROM ${parentId} AND is_trashed = false
-        ORDER BY name ASC`;
     return res.status(200).json({ folders });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Get Folder details & breadcrumb trail
 // GET /api/folders/:id
-export const getFolderDetails = async (req, res) => {
+export const getFolderDetails = async (req, res, next) => {
   try {
     const [folder] = await sql`
         SELECT * FROM folders
@@ -102,22 +116,22 @@ export const getFolderDetails = async (req, res) => {
 
     return res.status(200).json({ folder, breadcrumbs });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Rename Folder
 // PATCH /api/folders/:id/rename
-export const renameFolder = async (req, res) => {
+export const renameFolder = async (req, res, next) => {
   try {
-    const { name } = req.body || {};
+    const normalizedName = normalizeResourceName(req.body?.name);
 
-    if (typeof name !== "string" || !name.trim()) {
-      return res.status(400).json({ error: "Folder Name is Required." });
+    if (!normalizedName) {
+      return res.status(400).json({ error: "Folder name must be 1-255 characters." });
     }
 
     const [folder] =
-      await sql`UPDATE folders SET name = ${name.trim()}, updated_at = NOW() WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false RETURNING *`;
+      await sql`UPDATE folders SET name = ${normalizedName}, updated_at = NOW() WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false RETURNING *`;
 
     if (!folder) {
       return res.status(404).json({ error: "Folder not Found." });
@@ -125,15 +139,16 @@ export const renameFolder = async (req, res) => {
 
     return res.status(200).json({ folder });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Move folder to another directory
 // PATCH /api/folders/:id/move
-export const moveFolder = async (req, res) => {
+export const moveFolder = async (req, res, next) => {
   try {
-    const targetParent = req.body.target_parent ?? req.body.targetParent;
+    const body = req.body || {};
+    const targetParent = body.target_parent ?? body.targetParent;
 
     const result = await withTransaction(async (tx) => {
       await lockOwner(tx, req.user.id);
@@ -179,13 +194,13 @@ export const moveFolder = async (req, res) => {
     if (result.error) return res.status(result.status).json({ error: result.error });
     return res.status(200).json(result);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Soft delete folder (move to Trash)
 // DELETE /api/folders/:id
-export const softDeleteFolder = async (req, res) => {
+export const softDeleteFolder = async (req, res, next) => {
   try {
     if (!await softDeleteFolderHierarchy(req.params.id, req.user.id)) {
       return res.status(404).json({ error: "Folder not Found!" });
@@ -193,27 +208,27 @@ export const softDeleteFolder = async (req, res) => {
 
     return res.status(200).json({ message: "Folder moved to Trash." });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Restore folder from Trash
 // POST /api/folders/:id/restore
-export const restoreFolder = async (req, res) => {
+export const restoreFolder = async (req, res, next) => {
   try {
     if (!await restoreFolderHierarchy(req.params.id, req.user.id)) {
       return res.status(404).json({ error: "Folder not found in Trash." });
     }
 
-    return res.status(200).json({ message: "Folder moved to Trash." });
+    return res.status(200).json({ message: "Folder restored from Trash." });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };
 
 // Permanently delete folder and all nested contents
 // DELETE /api/folders/:id/permanent
-export const permanentDeleteFolder = async (req, res) => {
+export const permanentDeleteFolder = async (req, res, next) => {
   try {
     const deleted = await permanentDeleteFolderHierarchy(req.params.id, req.user.id);
     if (!deleted) {
@@ -222,6 +237,6 @@ export const permanentDeleteFolder = async (req, res) => {
 
     return res.status(200).json({ message: "Folder Parmenantely Deleted." });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return next(error);
   }
 };

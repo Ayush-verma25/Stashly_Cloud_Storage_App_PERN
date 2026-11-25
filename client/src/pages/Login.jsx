@@ -47,7 +47,7 @@ const Login = ({ mode = "login" }) => {
   return (
     <div className="flex min-h-screen flex-col bg-white text-zinc-900 md:flex-row">
       {/* Left Hero Section */}
-      <div className="relative flex min-h-screen flex-col justify-between overflow-hidden border-b border-zinc-200 bg-linear-to-br from-green-50 via-zinc-50 to-blue-50 px-6 py-8 sm:px-10 md:w-1/2 md:border-b-0 md:border-r md:px-12 md:py-12 lg:px-16 lg:py-14">
+      <div className="relative flex min-h-[50vh] flex-col justify-between overflow-hidden border-b border-zinc-200 bg-linear-to-br from-green-50 via-zinc-50 to-blue-50 px-6 py-8 sm:px-10 md:min-h-screen md:w-1/2 md:border-b-0 md:border-r md:px-12 md:py-12 lg:px-16 lg:py-14">
         <div
           className="absolute inset-0 bg-[url('/pattern.svg')]"
           aria-hidden="true"

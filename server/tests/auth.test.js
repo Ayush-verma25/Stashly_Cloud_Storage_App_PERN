@@ -16,6 +16,8 @@ registerHooks({
 });
 const { registerUser, LoginUser, LogoutUser, getMe } = await import('../controllers/authControllers.js');
 const { protect } = await import('../middlewares/auth.js');
+const { errorHandler } = await import('../middlewares/errorHandler.js');
+const { verifyOrigin } = await import('../middlewares/verifyOrigin.js');
 const response = () => ({
   statusCode: 200, cookies: [], cleared: [],
   status(code) { this.statusCode = code; return this; },
@@ -24,8 +26,11 @@ const response = () => ({
   clearCookie(...args) { this.cleared.push(args); },
 });
 beforeEach(() => {
-  process.env.JWT_SECRET = 'synthetic-test-secret';
+  process.env.JWT_SECRET = 'synthetic-test-secret-with-at-least-32-bytes';
   process.env.ORIGINS = ' https://app.example.test ,http://localhost:5173';
+  process.env.DATABASE_URL = 'postgresql://test:test@localhost/test';
+  process.env.AWS_REGION = 'us-east-1';
+  process.env.AWS_S3_BUCKET = 'test-bucket';
   process.env.NODE_ENV = 'test';
   globalThis.authTestSql = () => { throw new Error('Unexpected SQL'); };
 });
@@ -41,6 +46,21 @@ test('startup rejects missing, empty and whitespace secrets before database eval
     assert.match(result.stderr, /JWT_SECRET must be present and non-empty/);
     assert.doesNotMatch(result.stderr, /No database connection|Error Initializing database/);
   }
+});
+
+test('startup rejects short JWT secrets', () => {
+  const env = {
+    ...process.env,
+    JWT_SECRET: 'too-short',
+    DOTENV_CONFIG_PATH: '/nonexistent/auth-test.env',
+  };
+  const result = spawnSync(process.execPath, ['server.js'], {
+    cwd: new URL('../', import.meta.url),
+    env,
+    encoding: 'utf8',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /JWT_SECRET must be at least 32 bytes long/);
 });
 
 test('valid secret passes startup configuration validation', async () => {
@@ -75,7 +95,7 @@ test('new, existing and racing registrations have identical public results and n
   assert.deepEqual(results[0], results[2]);
 });
 
-test('login requires matching credentials and returns a single safe profile with a usable token', async () => {
+test('login requires matching credentials and returns the profile while keeping its token in an HTTP-only cookie', async () => {
   const password = await bcrypt.hash('correct', 4);
   globalThis.authTestSql = async () => [{ id: 'user-id', email: 'test@example.test', password }];
   const bad = response();
@@ -87,8 +107,9 @@ test('login requires matching credentials and returns a single safe profile with
   assert.equal(good.statusCode, 200);
   assert.equal(good.body.user.id, 'user-id');
   assert.equal(good.body.user.password, undefined);
-  assert.equal(jwt.verify(good.body.token, process.env.JWT_SECRET).id, 'user-id');
+  assert.equal(good.body.token, undefined);
   assert.equal(good.cookies.length, 1);
+  assert.equal(jwt.verify(good.cookies[0][1], process.env.JWT_SECRET).id, 'user-id');
 });
 
 test('logout rejects missing, opaque and untrusted origins without clearing cookies', async () => {
@@ -163,4 +184,75 @@ test('legacy long passwords can log in but remain invalid for registration', asy
   await LoginUser({ body }, login, assert.fail);
   assert.equal(login.statusCode, 200);
   assert.equal(login.body.user.id, 'user-id');
+});
+
+test('internal API errors are logged without exposing details to clients', () => {
+  const res = response();
+  const error = new Error('sensitive database detail');
+  const originalError = console.error;
+  let loggedError;
+  console.error = (_message, value) => {
+    loggedError = value;
+  };
+
+  try {
+    errorHandler(error, {}, res, () => {});
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(loggedError, error);
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Something went wrong.' });
+});
+
+test('upload limit failures return a safe client error', () => {
+  const res = response();
+  errorHandler(
+    { name: 'MulterError', code: 'LIMIT_FILE_SIZE', message: 'private details' },
+    {},
+    res,
+    () => {},
+  );
+
+  assert.equal(res.statusCode, 413);
+  assert.deepEqual(res.body, { error: 'File exceeds the maximum allowed size.' });
+});
+
+test('database constraint errors map to safe client responses', () => {
+  for (const [code, status, message] of [
+    ['22P02', 400, 'A request ID is invalid.'],
+    ['23505', 409, 'An item with these details already exists.'],
+  ]) {
+    const res = response();
+    errorHandler({ code, detail: 'private database detail' }, {}, res, () => {});
+    assert.equal(res.statusCode, status);
+    assert.deepEqual(res.body, { error: message });
+  }
+});
+
+test('unsafe requests require an explicitly allowed browser origin', () => {
+  for (const origin of [undefined, 'null', 'https://attacker.example.test']) {
+    const res = response();
+    let continued = false;
+    verifyOrigin(
+      { method: 'POST', get: () => origin },
+      res,
+      () => {
+        continued = true;
+      },
+    );
+    assert.equal(res.statusCode, 403);
+    assert.equal(continued, false);
+  }
+
+  let continued = false;
+  verifyOrigin(
+    { method: 'DELETE', get: () => 'https://app.example.test' },
+    response(),
+    () => {
+      continued = true;
+    },
+  );
+  assert.equal(continued, true);
 });

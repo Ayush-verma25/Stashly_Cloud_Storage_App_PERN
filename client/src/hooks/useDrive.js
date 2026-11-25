@@ -39,20 +39,11 @@ export function useDrive() {
     }
   };
 
-  // File Upload with simulated progress
+  // File Upload with request progress
   const uploadFiles = async (fileList, folder_id = currentFolderId) => {
     if (!fileList?.length) return;
     setIsUploading(true);
     setUploadProgress(0);
-
-    const totalSize = Array.from(fileList).reduce(
-      (acc, f) => acc + (f.size || 0),
-      0,
-    );
-    const step = 92 / Math.max(12, totalSize / 409715.2);
-    const interval = setInterval(() => {
-      setUploadProgress((p) => (p >= 92 ? p : Math.min(92, p + step)));
-    }, 100);
 
     const formData = new FormData();
     Array.from(fileList).forEach((f) => formData.append("files", f));
@@ -60,19 +51,20 @@ export function useDrive() {
 
     try {
       const { data } = await api.post("/api/files/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (event) => {
+          if (event.total) {
+            setUploadProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+          }
+        },
       });
 
-      clearInterval(interval);
       setUploadProgress(100);
       await new Promise((r) => setTimeout(r, 300));
       toast.success(`${data.files.length} file(s) uploaded Successfully!`);
       await Promise.all([refreshUploadDestination(folder_id), refreshUser()]);
     } catch (err) {
-      clearInterval(interval);
       toast.error(err.response?.data?.error || "File upload failed.");
     } finally {
-      clearInterval(interval);
       setIsUploading(false);
       setUploadProgress(0);
     }

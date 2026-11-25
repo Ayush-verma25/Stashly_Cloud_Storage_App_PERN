@@ -1,5 +1,4 @@
 import { FileTextIcon, ImageIcon, FilmIcon, MusicIcon, FileArchiveIcon, FileSpreadsheetIcon, FileCodeIcon, FileIcon } from "lucide-react";
-import { toast } from "react-hot-toast";
 
 // Sorting options for files
 export const SORT_OPTIONS = [
@@ -41,14 +40,6 @@ export function getFileIcon(mime_type, className = "size-6") {
     const color = match ? match.color : "text-orange-500";
     return <Icon className={`${className} ${color}`} />;
 }
-
-// Helper to copy share link to clipboard
-export const copyShareLink = (token) => {
-    const url = `${window.location.origin}/s/${token}`;
-    navigator.clipboard.writeText(url);
-    toast.success("Link copied to clipboard!");
-    return url;
-};
 
 // ==========================================
 // DUMMY INITIAL DATA FOR FRONTEND-ONLY MODE
