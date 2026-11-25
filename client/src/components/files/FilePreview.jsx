@@ -39,6 +39,8 @@ const FilePreview = ({ file, onClose }) => {
   if (!file) return null;
 
   const mime = file.mime_type || "";
+  const hasInteractivePreview = !isLoading && !error &&
+    (mime.startsWith("video/") || mime.startsWith("audio/") || mime === "application/pdf");
 
   return (
     <div
@@ -125,6 +127,7 @@ const FilePreview = ({ file, onClose }) => {
             <iframe
               src={previewUrl}
               title={file.name}
+              tabIndex={0}
               className="w-full h-[70vh] rounded-xl border border-slate-200"
             />
           ) : (
@@ -136,6 +139,8 @@ const FilePreview = ({ file, onClose }) => {
             </div>
           )}
         </div>
+        {/* Let the browser tab through native media or frame controls first. */}
+        {hasInteractivePreview && <div data-dialog-focus-end tabIndex={0} className="sr-only" />}
       </div>
     </div>
   );

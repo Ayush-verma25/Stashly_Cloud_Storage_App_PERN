@@ -137,3 +137,30 @@ test('lookup errors reach the error handler; deleted users receive 401; profiles
   await getMe(req, profile);
   assert.deepEqual(profile.body, { user });
 });
+
+test('registration rejects a NUL in the name before any account lookup', async () => {
+  const res = response();
+  await registerUser(
+    { body: { name: ' Test\0Name ', email: 'test@example.test', password: 'password' } },
+    res,
+    assert.fail,
+  );
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Name must not contain NUL characters.' });
+});
+
+test('legacy long passwords can log in but remain invalid for registration', async () => {
+  const password = 'é'.repeat(37);
+  const hash = await bcrypt.hash(password, 4);
+  const body = { name: 'Test', email: 'test@example.test', password };
+  const registration = response();
+  await registerUser({ body }, registration, assert.fail);
+  assert.equal(registration.statusCode, 400);
+  assert.match(registration.body.error, /72 bytes/);
+
+  globalThis.authTestSql = async () => [{ id: 'user-id', password: hash }];
+  const login = response();
+  await LoginUser({ body }, login, assert.fail);
+  assert.equal(login.statusCode, 200);
+  assert.equal(login.body.user.id, 'user-id');
+});

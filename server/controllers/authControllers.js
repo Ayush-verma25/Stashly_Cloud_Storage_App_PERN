@@ -37,6 +37,9 @@ export const registerUser = async (req, res, next) => {
 
         const normalizedName = name.trim();
         const normalizedEmail = email.toLowerCase().trim();
+        if (normalizedName.includes("\0")) {
+            return res.status(400).json({error: "Name must not contain NUL characters."})
+        }
         if (
             Array.from(normalizedName).length > 255 ||
             Array.from(normalizedEmail).length > 255
@@ -87,10 +90,7 @@ try {
         if (Array.from(normalizedEmail).length > 255) {
             return res.status(400).json({error: "Email must not exceed 255 characters."})
         }
-        if (bcrypt.truncates(password)) {
-            return res.status(400).json({error: "Password must not exceed 72 bytes."})
-        }
-
+        // Older registrations accepted passwords longer than bcrypt's 72 byte limit.
         const [user] = await sql`SELECT id, name, email, password, storage_used, storage_limit, created_at, updated_at FROM users WHERE email = ${normalizedEmail}`
 
         if(!user){
