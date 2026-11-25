@@ -1,4 +1,4 @@
-import { sql } from "../config/db.js";
+import { lockOwner, sql, withTransaction } from "../config/db.js";
 import {
   permanentDeleteFolderHierarchy,
   restoreFolderHierarchy,
@@ -16,36 +16,36 @@ export const createFolder = async (req, res) => {
       return res.status(400).json({ error: "Folder name is Required." });
     }
 
-    let folderPath = [];
-    if (targetParent) {
-      const [parentFolder] = await sql`
-            SELECT id, path FROM folders
-            WHERE id = ${targetParent} AND owner_id = ${req.user.id} AND is_trashed = false`;
+    const result = await withTransaction(async (tx) => {
+      // A child must inherit its parent's path before or after a concurrent move.
+      await lockOwner(tx, req.user.id);
+      let folderPath = [];
+      if (targetParent) {
+        const [parentFolder] = await tx`
+          SELECT id, path FROM folders
+          WHERE id = ${targetParent} AND owner_id = ${req.user.id} AND is_trashed = false
+          FOR SHARE`;
 
-      if (!parentFolder) {
-        return res.status(404).json({ error: "Parent folder not found." });
+        if (!parentFolder) return { status: 404, error: "Parent folder not found." };
+        folderPath = [...(parentFolder.path || []), parentFolder.id];
       }
 
-      folderPath = [...(parentFolder.path || []), parentFolder.id];
-    }
-
-    // check duplicate folder in same directory
-    const [existing] = await sql`
+      const [existing] = await tx`
         SELECT id FROM folders
-        WHERE name = ${name.trim()} AND parent_id IS NOT DISTINCT FROM ${targetParent || null} AND owner_id = ${req.user.id} AND is_trashed = false`;
+        WHERE name = ${name.trim()} AND parent_id IS NOT DISTINCT FROM ${targetParent || null}
+          AND owner_id = ${req.user.id} AND is_trashed = false`;
 
-    if (existing) {
-      return res
-        .status(400)
-        .json({ error: "A folder with this name already exists here." });
-    }
+      if (existing) return { status: 400, error: "A folder with this name already exists here." };
 
-    const [folder] = await sql`
+      const [folder] = await tx`
         INSERT INTO folders (name, parent_id, owner_id, path)
         VALUES (${name.trim()}, ${targetParent || null}, ${req.user.id}, ${folderPath})
         RETURNING *`;
+      return { folder };
+    });
 
-    return res.status(201).json({ folder });
+    if (result.error) return res.status(result.status).json({ error: result.error });
+    return res.status(201).json(result);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -134,58 +134,50 @@ export const renameFolder = async (req, res) => {
 export const moveFolder = async (req, res) => {
   try {
     const targetParent = req.body.target_parent ?? req.body.targetParent;
-    const folderId = req.params.id;
 
-    if (targetParent === folderId) {
-      return res.status(400).json({ error: "Cannot move folder into itself!" });
-    }
+    const result = await withTransaction(async (tx) => {
+      await lockOwner(tx, req.user.id);
+      const [folder] = await tx`
+        SELECT id FROM folders
+        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false
+        FOR UPDATE`;
+      if (!folder) return { status: 404, error: "Folder not Found!" };
 
-    const [folder] = await sql`
-        SELECT * FROM folders 
-        WHERE id = ${folderId} AND owner_id = ${req.user.id} AND is_trashed = false`;
-
-    if (!folder) {
-      return res.status(404).json({ error: "Folder not Found!" });
-    }
-
-    let newPath = [];
-    if (targetParent) {
-      const [targetFolder] = await sql`
-            SELECT * FROM folders
-            WHERE id = ${targetParent} AND owner_id = ${req.user.id} AND is_trashed = false`;
-
-      if (!targetFolder) {
-        return res.status(404).json({ error: "Target Folder not Found!" });
+      let parentId = null;
+      let newPath = [];
+      if (targetParent) {
+        const [targetFolder] = await tx`
+          SELECT id, path FROM folders
+          WHERE id = ${targetParent} AND owner_id = ${req.user.id} AND is_trashed = false
+          FOR UPDATE`;
+        if (!targetFolder) return { status: 404, error: "Target Folder not Found!" };
+        if (targetFolder.id === folder.id) {
+          return { status: 400, error: "Cannot move folder into itself!" };
+        }
+        if (targetFolder.path.includes(folder.id)) {
+          return { status: 400, error: "Cannot move folder into one of its subfolders." };
+        }
+        parentId = targetFolder.id;
+        newPath = [...targetFolder.path, parentId];
       }
 
-      const targetPath = targetFolder.path || [];
-
-      if (targetPath.includes(folderId)) {
-        return res
-          .status(400)
-          .json({ error: "Cannot move folder into one of its subfolders." });
+      const descendants = await tx`
+        SELECT id, path FROM folders
+        WHERE path @> ARRAY[${folder.id}::uuid] AND owner_id = ${req.user.id}
+        ORDER BY id FOR UPDATE`;
+      const [updated] = await tx`
+        UPDATE folders SET parent_id = ${parentId}, path = ${newPath}, updated_at = NOW()
+        WHERE id = ${folder.id} RETURNING *`;
+      for (const descendant of descendants) {
+        const suffix = descendant.path.slice(descendant.path.indexOf(folder.id) + 1);
+        await tx`UPDATE folders SET path = ${[...newPath, folder.id, ...suffix]}, updated_at = NOW()
+                 WHERE id = ${descendant.id}`;
       }
+      return { folder: updated };
+    });
 
-      newPath = [...targetPath, targetFolder.id];
-    }
-
-    const descendants = await sql`
-      SELECT id, path FROM folders
-      WHERE ${folderId} = ANY(path::text[]) AND owner_id = ${req.user.id}`;
-    const [[updated]] = await sql.transaction([
-      sql`
-        UPDATE folders
-        SET parent_id = ${targetParent || null}, path = ${newPath}, updated_at = NOW()
-        WHERE id = ${folderId}
-        RETURNING *`,
-      ...descendants.map((descendant) => {
-        const folderIndex = descendant.path.findIndex((id) => id === folderId);
-        const updatedPath = [...newPath, folderId, ...descendant.path.slice(folderIndex + 1)];
-        return sql`UPDATE folders SET path = ${updatedPath}, updated_at = NOW()
-                   WHERE id = ${descendant.id}`;
-      }),
-    ]);
-    return res.status(200).json({ folder: updated });
+    if (result.error) return res.status(result.status).json({ error: result.error });
+    return res.status(200).json(result);
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -233,14 +225,10 @@ export const restoreFolder = async (req, res) => {
 // DELETE /api/folders/:id/permanent
 export const permanentDeleteFolder = async (req, res) => {
   try {
-    const [folder] = await sql`SELECT id From folders
-        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = true`;
-
-    if (!folder) {
+    const deleted = await permanentDeleteFolderHierarchy(req.params.id, req.user.id);
+    if (!deleted) {
       return res.status(404).json({ error: "Folder not Found!" });
     }
-
-    await permanentDeleteFolderHierarchy(folder.id, req.user.id);
 
     return res.status(200).json({ message: "Folder Parmenantely Deleted." });
   } catch (error) {

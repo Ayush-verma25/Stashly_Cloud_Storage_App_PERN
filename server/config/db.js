@@ -1,6 +1,40 @@
 import { neon, Pool } from "@neondatabase/serverless";
 
 export const sql = neon(process.env.DATABASE_URL);
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on("error", (error) => console.error("Idle database connection error:", error));
+
+// Use a single connection when later statements depend on reads or storage I/O.
+export async function withTransaction(work) {
+  const client = await pool.connect();
+  let releaseError;
+  try {
+    await client.query("BEGIN");
+    const result = await work(async (strings, ...values) => {
+      const query = strings.reduce((text, part, i) => text + (i ? `$${i}` : "") + part, "");
+      const { rows } = await client.query(query, values);
+      return rows;
+    });
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      releaseError = rollbackError;
+    }
+    throw error;
+  } finally {
+    client.release(releaseError);
+  }
+}
+
+// Serialize hierarchy changes and quota updates for this owner without blocking FK checks.
+export async function lockOwner(tx, ownerId) {
+  const [owner] = await tx`
+    SELECT storage_used, storage_limit FROM users WHERE id = ${ownerId} FOR NO KEY UPDATE`;
+  return owner;
+}
 
 export async function initDB() {
   try {
