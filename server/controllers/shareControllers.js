@@ -31,7 +31,7 @@ export const createShareLink = async (req, res) => {
 
     // Check for an existing shared link for this resource
     const [existing] =
-      await sql`SELECT id FROM share_links WHERE resource_id = ${resoueceId} AND owner_id = ${req.user.id}`;
+      await sql`SELECT * FROM share_links WHERE resource_id = ${resoueceId} AND owner_id = ${req.user.id}`;
 
     // if expired, remove it.
     if (
@@ -58,7 +58,7 @@ export const createShareLink = async (req, res) => {
 export const getUserShareLink = async (req, res) => {
   try {
     const activeShareLinks =
-      await sql`SELECT sl.*, CASE WHEN sl.resource_type = 'file' THEN json_build_object('id', f.id, "name", f.name, 'mime_type', f.mime_type, 'size', f.size) WHEN sl.resource_type = "folder" THEN json_build_object('id', fo.id, "name", fo.name) END As resource FROM share_links sl LEFT JOIN files f ON sl.resource_type = 'file' AND f.id = sl.resouece_id AND f.is_trashed = false LEFT JOIN folders pf ON f.folder_id = pf.id LEFT JOIN folders fo ON sl.resource_type = 'folder' AND fo.id = sl.resource_id AND fo.is_trashed = false WHERE sl.owner_id = ${req.user.id} AND (
+      await sql`SELECT sl.*, CASE WHEN sl.resource_type = 'file' THEN json_build_object('id', f.id, 'name', f.name, 'mime_type', f.mime_type, 'size', f.size) WHEN sl.resource_type = 'folder' THEN json_build_object('id', fo.id, 'name', fo.name) END As resource FROM share_links sl LEFT JOIN files f ON sl.resource_type = 'file' AND f.id = sl.resource_id AND f.is_trashed = false LEFT JOIN folders pf ON f.folder_id = pf.id LEFT JOIN folders fo ON sl.resource_type = 'folder' AND fo.id = sl.resource_id AND fo.is_trashed = false WHERE sl.owner_id = ${req.user.id} AND (
             (sl.resource_type = 'file' AND f.id IS NOT NULL AND (f.folder_id IS NULL OR pf.is_trashed = false))
             OR (sl.resource_type = 'folder' AND fo.id IS NOT NULL)
         ) ORDER BY sl.created_at DESC`;
@@ -97,7 +97,7 @@ export const accessShareLink = async (req, res) => {
     const [owner] =
       await sql`SELECT id, name, email FROM users WHERE id = ${shareLink.owner_id}`;
 
-    if (shareLink.resouece_type === "file") {
+    if (shareLink.resource_type === "file") {
       const [file] =
         await sql`SELECT * FROM files WHERE id = ${shareLink.resource_id}`;
       if (!file || file.is_trashed) {
@@ -126,7 +126,7 @@ export const accessShareLink = async (req, res) => {
 
     // Folder resource
     const [folder] =
-      await sql`SELECT * FROM folder WHERE id = ${shareLink.resource_id}`;
+      await sql`SELECT * FROM folders WHERE id = ${shareLink.resource_id}`;
     if (!folder || folder.is_trashed) {
       return res.status(404).json({ error: "Folder is no longer available!" });
     }
