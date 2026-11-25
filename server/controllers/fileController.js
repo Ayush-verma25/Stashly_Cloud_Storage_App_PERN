@@ -1,5 +1,6 @@
 import { lockOwner, sql, withTransaction } from "../config/db.js";
 import path from "path";
+import { createReadStream } from "node:fs";
 import crypto from "crypto";
 import { getSignedFileURL, uploadToStorage } from "../utils/s3Helper.js";
 import {
@@ -10,7 +11,7 @@ import {
 import { normalizeResourceName } from "../utils/validation.js";
 
 const SORT_MAP = {
-  name_asc: "name ASC",
+  name_asc: "name ASC, id ASC",
   name_desc: "name DESC",
   date_asc: "created_at ASC",
   date_desc: "created_at DESC",
@@ -82,7 +83,12 @@ export const uploadFiles = async (req, res, next) => {
     try {
       const uploads = await Promise.allSettled(
         staged.map(async ({ file, key }) => {
-          await uploadToStorage(file.buffer, key, file.mimetype, file.size);
+          const stream = createReadStream(file.path);
+          try {
+            await uploadToStorage(stream, key, file.mimetype, file.size);
+          } finally {
+            stream.destroy();
+          }
           return { file, key };
         }),
       );

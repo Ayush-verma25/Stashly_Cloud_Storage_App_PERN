@@ -18,6 +18,7 @@ const FileGrid = ({
     files,
     filesPagination,
     isDriveLoading,
+    isDisplayedDriveCurrent,
     currentFolderId,
     searchQuery,
     sortBy,
@@ -116,7 +117,7 @@ const FileGrid = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={filesPagination.page <= 1}
+              disabled={!isDisplayedDriveCurrent || filesPagination.page <= 1}
               onClick={() =>
                 fetchDriveContent(
                   currentFolderId,
@@ -131,7 +132,7 @@ const FileGrid = ({
             </button>
             <button
               type="button"
-              disabled={filesPagination.page >= filesPagination.totalPages}
+              disabled={!isDisplayedDriveCurrent || filesPagination.page >= filesPagination.totalPages}
               onClick={() =>
                 fetchDriveContent(
                   currentFolderId,

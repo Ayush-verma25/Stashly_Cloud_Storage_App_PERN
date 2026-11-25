@@ -40,6 +40,7 @@ export const AppProvider = ({ children }) => {
   });
   const [isDriveLoading, setIsDriveLoading] = useState(false);
   const driveRequestId = useRef(0);
+  const [loadedDrive, setLoadedDrive] = useState(null);
 
   const setAuthenticatedUser = useCallback((nextUser) => {
     const previousUser = userRef.current;
@@ -51,6 +52,7 @@ export const AppProvider = ({ children }) => {
       setFiles([]);
       setFilesPagination({ page: 1, limit: 50, totalFiles: 0, totalPages: 0 });
       setIsDriveLoading(false);
+      setLoadedDrive(null);
     }
     userRef.current = nextUser;
     setUser(nextUser);
@@ -146,40 +148,46 @@ export const AppProvider = ({ children }) => {
     });
   };
 
+  const userId = user?.id;
   const fetchDriveContent = useCallback(
-    async (
-      folderId = currentFolderId,
-      search = searchQuery,
-      sort = sortBy,
-      page = 1,
-    ) => {
-      if (!user) return;
+    async (folderId, search, sort, page) => {
+      if (!userId || userRef.current?.id !== userId) return;
       const requestId = ++driveRequestId.current;
       setIsDriveLoading(true);
       try {
         const parentParam = folderId || "null";
-        const [folderRes, fileRes, detailRes] = await Promise.all([
+        const fetchFiles = (requestedPage) =>
+          api.get("/api/files", {
+            params: { folder_id: parentParam, search, sort, page: requestedPage },
+          });
+        const [folderRes, firstFileRes, detailRes] = await Promise.all([
           api.get("/api/folders", {
             params: { parent_id: parentParam, search },
           }),
-          api.get("/api/files", {
-            params: { folder_id: parentParam, search, sort, page },
-          }),
+          fetchFiles(page),
           folderId ? api.get(`/api/folders/${folderId}`) : null,
         ]);
 
+        let fileRes = firstFileRes;
+        let requestedPage = page;
+        while (
+          requestId === driveRequestId.current &&
+          requestedPage > 1 &&
+          fileRes.data.files?.length === 0 &&
+          fileRes.data.pagination?.totalPages > 0
+        ) {
+          requestedPage = Math.min(requestedPage - 1, fileRes.data.pagination.totalPages);
+          fileRes = await fetchFiles(requestedPage);
+        }
         if (requestId !== driveRequestId.current) return;
+        setLoadedDrive({ folderId, search, sort });
 
         setFolders(folderRes.data.folders || []);
         setFiles(fileRes?.data?.files || []);
-        setFilesPagination(
-          fileRes?.data?.pagination || {
-            page: 1,
-            limit: 50,
-            totalFiles: 0,
-            totalPages: 0,
-          },
-        );
+        const pagination = fileRes.data.pagination || {
+          page: 1, limit: 50, totalFiles: 0, totalPages: 0,
+        };
+        setFilesPagination(pagination.totalPages ? pagination : { ...pagination, page: 1 });
         setBreadCrumbs(
           detailRes?.data?.folder
             ? detailRes.data.breadcrumbs || ROOT_BREADCRUMB
@@ -195,18 +203,25 @@ export const AppProvider = ({ children }) => {
         }
       }
     },
-    [user, currentFolderId, searchQuery, sortBy],
+    [userId],
   );
 
+  const isDisplayedDriveCurrent =
+    loadedDrive?.folderId === currentFolderId &&
+    loadedDrive?.search === searchQuery &&
+    loadedDrive?.sort === sortBy;
+  const refreshPage = isDisplayedDriveCurrent ? filesPagination.page : 1;
   const activeDrive = useRef(null);
   useLayoutEffect(() => {
-    activeDrive.current = { folderId: currentFolderId, fetchDriveContent };
-  }, [currentFolderId, fetchDriveContent]);
+    activeDrive.current = {
+      folderId: currentFolderId, searchQuery, sortBy, page: refreshPage, fetchDriveContent,
+    };
+  }, [currentFolderId, searchQuery, sortBy, refreshPage, fetchDriveContent]);
 
-  const refreshUploadDestination = useCallback((folderId) => {
+  const refreshDrive = useCallback((folderId) => {
     const drive = activeDrive.current;
     if (drive?.folderId === (folderId || null)) {
-      return drive.fetchDriveContent(folderId);
+      return drive.fetchDriveContent(drive.folderId, drive.searchQuery, drive.sortBy, drive.page);
     }
   }, []);
 
@@ -223,7 +238,7 @@ export const AppProvider = ({ children }) => {
     uploadProgress,
     SetUploadeProgress,
     refreshUser,
-    refreshUploadDestination,
+    refreshDrive,
     currentFolderId,
     setCurrentFolderId,
     breadsCrumbs,
@@ -233,6 +248,7 @@ export const AppProvider = ({ children }) => {
     setFiles,
     filesPagination,
     isDriveLoading,
+    isDisplayedDriveCurrent,
     fetchDriveContent,
     searchQuery,
     setSearchQuery,

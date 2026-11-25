@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../config/api";
+import toast from "react-hot-toast";
 import { Spinner } from "../components/ui/Spinner";
 import { DownloadIcon, LockIcon, LucideFolder } from "lucide-react";
 import { Button } from "../components/ui/Button";
@@ -52,6 +53,28 @@ const SharedWithMe = () => {
   const data = hasCurrentResult ? result.data : null;
   const navigateToFolder = (folderId) => setNavigation({ token, folderId });
 
+  const downloadFile = async (fileId) => {
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      toast.error("Allow popups to download this file.");
+      return;
+    }
+    tab.opener = null;
+    try {
+      const { data: latest } = await api.get(`/api/shares/access/${token}`, {
+        params: currentFolderId ? { folder_id: currentFolderId } : undefined,
+      });
+      const url = latest.resource_type === "file"
+        ? (latest.file?.id === fileId ? latest.url : null)
+        : latest.files?.find((file) => file.id === fileId)?.url;
+      if (!url) throw new Error("The shared file is no longer available.");
+      tab.location.replace(url);
+    } catch (err) {
+      tab.close();
+      toast.error(err.response?.data?.error || "Unable to download the shared file.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       {/* Minimal Header */}
@@ -86,14 +109,20 @@ const SharedWithMe = () => {
             <div className="size-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto border border-red-200">
               <LockIcon className="size-6" />
             </div>
-            <h3>Link Unavailable</h3>
+            <h3>{currentFolderId ? "Folder Unavailable" : "Link Unavailable"}</h3>
             <p>{error}</p>
             <div className="pt-2">
-              <Link to="/">
-                <Button variant="secondary" size="sm">
-                  Go to Homepage
+              {currentFolderId ? (
+                <Button variant="secondary" size="sm" onClick={() => navigateToFolder(null)}>
+                  Back to Shared Folder
                 </Button>
-              </Link>
+              ) : (
+                <Link to="/">
+                  <Button variant="secondary" size="sm">
+                    Go to Homepage
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         ) : data?.resource_type === "file" ? (
@@ -123,16 +152,14 @@ const SharedWithMe = () => {
             ) : null}
 
             {data.url && (
-              <a
-                href={data.url}
-                download={data.file.name}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                onClick={() => downloadFile(data.file.id)}
                 className="inline-flex items-center justify-center gap-2 w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm rounded-lg transition"
               >
                 <DownloadIcon className="size-4" />
                 <span>Download File</span>
-              </a>
+              </button>
             )}
           </div>
         ) : (
@@ -217,16 +244,14 @@ const SharedWithMe = () => {
                       </div>
 
                       {f.url && (
-                        <a
-                          href={f.url}
-                          download={f.name}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(f.id)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition shrink-0"
                         >
                           <DownloadIcon className="h-3.5" />
                           <span>Download</span>
-                        </a>
+                        </button>
                       )}
                     </div>
                   ))}

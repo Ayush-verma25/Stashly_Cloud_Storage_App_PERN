@@ -13,7 +13,7 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 const Drive = () => {
   const navigate = useNavigate();
   const { folderId } = useParams();
-  const { fetchDriveContent, setCurrentFolderId } = useApp();
+  const { fetchDriveContent, setCurrentFolderId, searchQuery, sortBy } = useApp();
   const { deleteItem: removeDriveItem } = useDrive();
 
   // Active item modals
@@ -28,8 +28,8 @@ const Drive = () => {
   useEffect(() => {
     const id = folderId || null;
     setCurrentFolderId(id);
-    fetchDriveContent(id);
-  }, [folderId, fetchDriveContent, setCurrentFolderId]);
+    fetchDriveContent(id, searchQuery, sortBy, 1);
+  }, [folderId, fetchDriveContent, setCurrentFolderId, searchQuery, sortBy]);
 
   const handleConfermDelete = async () => {
     if (!deleteItem || deleteInProgress.current) return;
