@@ -8,11 +8,11 @@ export const getTrashItems = async (req, res, next) => {
     const [files, folders] = await Promise.all([
       sql`
             SELECT * FROM files
-            WHERE owner_id = ${req.user.id} AND is_trashed = true
+            WHERE owner_id = ${req.user.id} AND is_trashed = true AND NOT pending_delete
             ORDER BY  trashed_at DESC`,
       sql`
             SELECT * FROM folders
-            WHERE owner_id = ${req.user.id} AND is_trashed = true
+            WHERE owner_id = ${req.user.id} AND is_trashed = true AND NOT pending_delete
             ORDER BY  trashed_at DESC`,
     ]);
 

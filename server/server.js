@@ -3,6 +3,7 @@ import "./config/env.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { initDB, sql } from "./config/db.js";
+import { startCleanupWorker } from "./services/storageService.js";
 import folderRouter from "./routes/folderRoutes.js";
 import authRouter from "./routes/authRoutes.js";
 import fileRouter from "./routes/fileRoutes.js";
@@ -108,6 +109,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 async function startServer() {
   await initDB();
+  startCleanupWorker();
 
   await new Promise((resolve, reject) => {
     const server = app.listen(port, () => resolve(server));

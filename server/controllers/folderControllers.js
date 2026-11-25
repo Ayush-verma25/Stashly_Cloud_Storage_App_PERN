@@ -202,14 +202,9 @@ export const moveFolder = async (req, res, next) => {
 // DELETE /api/folders/:id
 export const softDeleteFolder = async (req, res, next) => {
   try {
-    const [folder] = await sql`SELECT id From folders
-        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false`;
-
-    if (!folder) {
+    if (!await softDeleteFolderHierarchy(req.params.id, req.user.id)) {
       return res.status(404).json({ error: "Folder not Found!" });
     }
-
-    await softDeleteFolderHierarchy(folder.id, req.user.id);
 
     return res.status(200).json({ message: "Folder moved to Trash." });
   } catch (error) {
@@ -221,14 +216,9 @@ export const softDeleteFolder = async (req, res, next) => {
 // POST /api/folders/:id/restore
 export const restoreFolder = async (req, res, next) => {
   try {
-    const [folder] = await sql`SELECT id From folders
-        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = true`;
-
-    if (!folder) {
+    if (!await restoreFolderHierarchy(req.params.id, req.user.id)) {
       return res.status(404).json({ error: "Folder not found in Trash." });
     }
-
-    await restoreFolderHierarchy(folder.id, req.user.id);
 
     return res.status(200).json({ message: "Folder restored from Trash." });
   } catch (error) {

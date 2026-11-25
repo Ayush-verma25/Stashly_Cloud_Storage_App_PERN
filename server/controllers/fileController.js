@@ -1,13 +1,10 @@
 import { lockOwner, sql, withTransaction } from "../config/db.js";
 import path from "path";
 import crypto from "crypto";
-import {
-  deleteMultipleFromStorage,
-  getSignedFileURL,
-  uploadToStorage,
-} from "../utils/s3Helper.js";
+import { getSignedFileURL, uploadToStorage } from "../utils/s3Helper.js";
 import {
   adjustUserStorage,
+  cleanStagedUpload,
   permanentDeleteFileRecord,
 } from "../services/storageService.js";
 import { normalizeResourceName } from "../utils/validation.js";
@@ -72,18 +69,20 @@ export const uploadFiles = async (req, res, next) => {
         .json({ error: quotaError(req.user.storage_limit) });
     }
 
-    const uploadedKeys = [];
+    const staged = req.files.map(file => ({
+      file, key: `users/${req.user.id}/${crypto.randomUUID()}${path.extname(file.originalname)}`,
+    }));
+    const keys = staged.map(entry => entry.key);
+    await sql`INSERT INTO staged_uploads (owner_id, s3_key)
+      SELECT ${req.user.id}, unnest(${keys}::text[])`;
     let createFiles;
     let updatedStorage;
     let exceededLimit;
+    let missingFolder = false;
     try {
       const uploads = await Promise.allSettled(
-        req.files.map(async (file) => {
-          const fileExt = path.extname(file.originalname);
-          const randomString = crypto.randomBytes(8).toString("hex");
-          const key = `users/${req.user.id}/${Date.now()}_${randomString}${fileExt}`;
-          await uploadToStorage(file.buffer, key, file.mimetype);
-          uploadedKeys.push(key);
+        staged.map(async ({ file, key }) => {
+          await uploadToStorage(file.buffer, key, file.mimetype, file.size);
           return { file, key };
         }),
       );
@@ -104,6 +103,18 @@ export const uploadFiles = async (req, res, next) => {
           throw new Error(quotaError(exceededLimit));
         }
 
+        if (targetFolderId) {
+          const [folder] = await tx`SELECT id FROM folders WHERE id = ${targetFolderId}
+            AND owner_id = ${req.user.id} AND NOT is_trashed FOR SHARE`;
+          if (!folder) {
+            missingFolder = true;
+            throw new Error("Target folder not found.");
+          }
+        }
+        const intents = await tx`DELETE FROM staged_uploads WHERE s3_key = ANY(${keys}::text[])
+          AND NOT deleting RETURNING s3_key`;
+        if (intents.length !== keys.length) throw new Error("Staged upload expired.");
+
         const createFiles = [];
         for (const {
           value: { file, key },
@@ -123,7 +134,11 @@ export const uploadFiles = async (req, res, next) => {
         return { createFiles, updatedStorage };
       }));
     } catch (error) {
-      await deleteMultipleFromStorage(uploadedKeys);
+      for (const key of keys) {
+        try { await cleanStagedUpload(req.user.id, key, true); }
+        catch (cleanupError) { console.error("Upload cleanup deferred:", cleanupError); }
+      }
+      if (missingFolder) return res.status(404).json({ error: error.message });
       if (exceededLimit !== undefined) {
         return res.status(400).json({ error: error.message });
       }
@@ -198,7 +213,7 @@ export const getFiles = async (req, res, next) => {
 export const getFilePreviewUrl = async (req, res, next) => {
   try {
     const [file] = await sql`
-        SELECT * FROM files WHERE id = ${req.params.id} AND owner_id = ${req.user.id}`;
+        SELECT * FROM files WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND NOT pending_delete`;
 
     if (!file) {
       return res.status(400).json({ error: "File not Found!" });
@@ -302,7 +317,7 @@ export const restoreFile = async (req, res, next) => {
     const [file] = await sql`
         UPDATE files
         SET is_trashed = false, trashed_at = NULL, updated_at = NOW()
-        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = true RETURNING id`;
+        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = true AND NOT pending_delete RETURNING id`;
 
     if (!file) {
       return res.status(404).json({ error: "File not found in Trash." });
