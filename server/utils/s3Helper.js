@@ -8,12 +8,13 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { BUCKET_NAME, client } from "../config/s3.js";
 
-export const uploadToStorage = async (fileBuffer, key, mimeType) => {
+export const uploadToStorage = async (body, key, mimeType, size) => {
   await client.send(
     new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
-      Body: fileBuffer,
+      Body: body,
+      ContentLength: size,
       ContentType: mimeType,
     }),
   );
@@ -75,5 +76,8 @@ export const deleteFromStorage = async (key) => {
 
 export const deleteMultipleFromStorage = async (keys) => {
   if (!keys?.length) return;
-  await Promise.all(keys.map(deleteFromStorage));
+  // Keep callers waiting for all storage operations, even if one fails.
+  const results = await Promise.allSettled(keys.map(deleteFromStorage));
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure) throw failure.reason;
 };

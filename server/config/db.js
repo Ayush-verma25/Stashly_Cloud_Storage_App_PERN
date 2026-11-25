@@ -1,6 +1,41 @@
 import { neon, Pool } from "@neondatabase/serverless";
 
 export const sql = neon(process.env.DATABASE_URL);
+if (typeof globalThis.WebSocket !== "function") throw new Error("Node with global WebSocket support is required.");
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on("error", (error) => console.error("Idle database connection error:", error));
+
+// Use a single connection when later statements depend on reads or storage I/O.
+export async function withTransaction(work) {
+  const client = await pool.connect();
+  let releaseError;
+  try {
+    await client.query("BEGIN");
+    const result = await work(async (strings, ...values) => {
+      const query = strings.reduce((text, part, i) => text + (i ? `$${i}` : "") + part, "");
+      const { rows } = await client.query(query, values);
+      return rows;
+    });
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      releaseError = rollbackError;
+    }
+    throw error;
+  } finally {
+    client.release(releaseError);
+  }
+}
+
+// Serialize hierarchy changes and quota updates for this owner without blocking FK checks.
+export async function lockOwner(tx, ownerId) {
+  const [owner] = await tx`
+    SELECT storage_used, storage_limit FROM users WHERE id = ${ownerId} FOR NO KEY UPDATE`;
+  return owner;
+}
 
 export async function initDB() {
   try {
@@ -61,6 +96,13 @@ export async function initDB() {
                     CONSTRAINT unique_resource_owner UNIQUE (resource_id, owner_id)
                 )
             `,
+      sql`ALTER TABLE files ADD COLUMN IF NOT EXISTS pending_delete BOOLEAN NOT NULL DEFAULT false`,
+      sql`ALTER TABLE folders ADD COLUMN IF NOT EXISTS pending_delete BOOLEAN NOT NULL DEFAULT false`,
+      sql`CREATE TABLE IF NOT EXISTS staged_uploads (
+        s3_key TEXT PRIMARY KEY, owner_id UUID NOT NULL, generation UUID NOT NULL DEFAULT gen_random_uuid(),
+        retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + interval '1 hour',
+        deleting BOOLEAN NOT NULL DEFAULT false
+      )`,
       sql`CREATE INDEX IF NOT EXISTS idx_folders_owner_parent  ON folders (owner_id, parent_id, is_trashed)`,
       sql`CREATE INDEX IF NOT EXISTS idx_folders_owner_trashed ON folders (owner_id, is_trashed)`,
       sql`CREATE INDEX IF NOT EXISTS idx_folders_path          ON folders USING GIN (path)`,

@@ -3,10 +3,12 @@ import "./config/env.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { initDB } from "./config/db.js";
+import { startCleanupWorker } from "./services/storageService.js";
 import folderRouter from "./routes/folderRoutes.js";
 import authRouter from "./routes/authRoutes.js";
 import fileRouter from "./routes/fileRoutes.js";
 import trashRouter from "./routes/trashRoutes.js";
+import shareRouter from "./routes/shareRoutes.js";
 
 const requiredEnvironment = ["ORIGINS", "JWT_SECRET", "DATABASE_URL"];
 const missingEnvironment = requiredEnvironment.filter(
@@ -43,6 +45,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/folders", folderRouter);
 app.use("/api/files", fileRouter);
 app.use("/api/trash", trashRouter);
+app.use("/api/shares", shareRouter);
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {
@@ -59,6 +62,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 async function startServer() {
   await initDB();
+  startCleanupWorker();
 
   await new Promise((resolve, reject) => {
     const server = app.listen(port, () => resolve(server));

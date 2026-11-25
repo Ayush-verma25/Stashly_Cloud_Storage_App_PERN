@@ -1,10 +1,12 @@
-import { sql } from "../config/db.js";
+import { lockOwner, sql, withTransaction } from "../config/db.js";
+import { createReadStream } from "node:fs";
+import { unlink } from "node:fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { getSignedFileURL, uploadToStorage } from "../utils/s3Helper.js";
 import {
   adjustUserStorage,
-  cleanupShareLinks,
+  cleanStagedUpload,
   permanentDeleteFileRecord,
 } from "../services/storageService.js";
 
@@ -14,6 +16,9 @@ const SORT_MAP = {
   date_asc: "created_at ASC",
   date_desc: "created_at DeSC",
 };
+
+const quotaError = (limit) =>
+  `Upload exceeds storage quota limit of ${(Number(limit) / (1024 ** 3)).toFixed(1)} GB.`;
 
 // Upload file(s)
 // POST /api/files/upload
@@ -42,37 +47,87 @@ export const uploadFiles = async (req, res) => {
       Number(req.user.storage_used) + totalNewBytes >
       Number(req.user.storage_limit)
     ) {
-      const limitGb = (
-        Number(req.user.storage_limit) /
-        (1024 * 1024 * 1024)
-      ).toFixed(1);
-      returnres
-        .status(400)
-        .json({
-          error: `Upload exceeds storage quota limit of ${limitGb} GB.`,
-        });
+      return res.status(400).json({ error: quotaError(req.user.storage_limit) });
     }
 
-    // Strem buffers to storage and record in database in parallel
-    const createFiles = await Promise.all(
-      req.files.map(async (multerFile) => {
-        const fileExt = path.extname(multerFile.originalname);
-        const randomString = crypto.randomBytes(8).toString("hex");
-        const s3Key = `users/${req.user.id}/${Date.now()}_${randomString}${fileExt}`;
-        await uploadToStorage(multerFile.buffer, s3Key, multerFile.mimetype);
+    const staged = req.files.map(file => ({
+      file, key: `users/${req.user.id}/${crypto.randomUUID()}${path.extname(file.originalname)}`,
+    }));
+    const keys = staged.map(entry => entry.key);
+    await sql`INSERT INTO staged_uploads (owner_id, s3_key)
+      SELECT ${req.user.id}, unnest(${keys}::text[])`;
+    let createFiles;
+    let updatedStorage;
+    let exceededLimit;
+    let missingFolder = false;
+    try {
+      const uploads = await Promise.allSettled(staged.map(async ({file, key}) => {
+        const stream = createReadStream(file.path);
+        const closed = new Promise(resolve => stream.once("close", resolve));
+        try {
+          await uploadToStorage(stream, key, file.mimetype, file.size);
+        } finally {
+          stream.destroy();
+          await closed;
+        }
+        return { file, key };
+      }));
 
-        const [row] = await sql`
-                INSERT INTO files (name, original_name, mime_type, size, s3_key, folder_id, owner_id) VALUES (${multerFile.size}, ${s3Key}, ${targetFolderId}, ${req.user.id}) RETURNING *`;
-        return row;
-      }),
-    );
+      const failedUpload = uploads.find((upload) => upload.status === "rejected");
+      if (failedUpload) throw failedUpload.reason;
 
-    const updatedStorage = await adjustUserStorage(req.user.id, totalNewBytes);
-    return res
-      .status(201)
-      .json({ files: createFiles, storage_used: updatedStorage });
+      ({ createFiles, updatedStorage } = await withTransaction(async (tx) => {
+        const owner = await lockOwner(tx, req.user.id);
+        if (!owner) throw new Error("Upload owner not found.");
+        if (Number(owner.storage_used) + totalNewBytes > Number(owner.storage_limit)) {
+          exceededLimit = owner.storage_limit;
+          throw new Error(quotaError(exceededLimit));
+        }
+
+        if (targetFolderId) {
+          const [folder] = await tx`SELECT id FROM folders WHERE id = ${targetFolderId}
+            AND owner_id = ${req.user.id} AND NOT is_trashed FOR SHARE`;
+          if (!folder) {
+            missingFolder = true;
+            throw new Error("Target folder not found.");
+          }
+        }
+        const intents = await tx`DELETE FROM staged_uploads WHERE s3_key = ANY(${keys}::text[])
+          AND NOT deleting RETURNING s3_key`;
+        if (intents.length !== keys.length) throw new Error("Staged upload expired.");
+
+        const createFiles = [];
+        for (const { value: { file, key } } of uploads) {
+          const [row] = await tx`
+            INSERT INTO files (name, original_name, mime_type, size, s3_key, folder_id, owner_id)
+            VALUES (${file.originalname}, ${file.originalname}, ${file.mimetype}, ${file.size},
+                    ${key}, ${targetFolderId}, ${req.user.id}) RETURNING *`;
+          createFiles.push(row);
+        }
+
+        const updatedStorage = await adjustUserStorage(req.user.id, totalNewBytes, tx);
+        return { createFiles, updatedStorage };
+      }));
+    } catch (error) {
+      for (const key of keys) {
+        try { await cleanStagedUpload(req.user.id, key, true); }
+        catch (cleanupError) { console.error("Upload cleanup deferred:", cleanupError); }
+      }
+      if (missingFolder) return res.status(404).json({ error: error.message });
+      if (exceededLimit !== undefined) {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+
+    return res.status(201).json({ files: createFiles, storage_used: updatedStorage });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  } finally {
+    await Promise.all((req.files ?? []).map(async file => {
+      try { await unlink(file.path); }
+      catch (error) { if (error.code !== "ENOENT") console.error("Temporary upload cleanup failed:", error); }
+    }));
   }
 };
 
@@ -107,7 +162,7 @@ export const getFiles = async (req, res) => {
             WHERE owner_id = ${req.user.id} AND is_trashed = false
             AND (${isSearch}::boolean = true AND name ILIKE ${pattern} OR ${isSearch}::boolean = false AND folder_id IS NOT DISTINCT FROM ${targetFolderId})
             ORDER BY ${sql.unsafe(orderBy)}
-            LIMIT ${limitNum} OFF SET ${offset}`,
+            LIMIT ${limitNum} OFFSET ${offset}`,
 
       sql`
             SELECT COUNT(*)::int AS total FROM files
@@ -136,7 +191,7 @@ export const getFiles = async (req, res) => {
 export const getFilePreviewUrl = async (req, res) => {
   try {
     const [file] = await sql`
-        SELECT * FROM files WHERE id = ${req.params.id} AND owner_id = ${req.user.id}`;
+        SELECT * FROM files WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND NOT pending_delete`;
 
     if (!file) {
       return res.status(400).json({ error: "File not Found!" });
@@ -208,17 +263,24 @@ export const moveFile = async (req, res) => {
 // DELETE /api/files/:id
 export const softDeleteFile = async (req, res) => {
   try {
-    const [file] = await sql`
-        UPDATE files
-        SET is_trashed = true, trashed_at = NOW(), updated_at = NOW()
-        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false
-        RETURNING *`;
+    const [[file]] = await sql.transaction([
+      sql`
+        WITH trashed_file AS (
+          UPDATE files
+          SET is_trashed = true, trashed_at = NOW(), updated_at = NOW()
+          WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = false
+          RETURNING id
+        ), removed_links AS (
+          DELETE FROM share_links
+          WHERE owner_id = ${req.user.id} AND resource_id IN (SELECT id FROM trashed_file)
+        )
+        SELECT id FROM trashed_file`,
+    ]);
 
     if (!file) {
       return res.status(404).json({ error: "File not Found!" });
     }
 
-    await cleanupShareLinks([file.id], [], req.user.id);
     return res.status(200).json({ message: "File moved to Trash!" });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -232,7 +294,7 @@ export const restoreFile = async (req, res) => {
     const [file] = await sql`
         UPDATE files
         SET is_trashed = false, trashed_at = NULL, updated_at = NOW()
-        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = true RETURNING id`;
+        WHERE id = ${req.params.id} AND owner_id = ${req.user.id} AND is_trashed = true AND NOT pending_delete RETURNING id`;
 
     if (!file) {
       return res.status(404).json({ error: "File not found in Trash." });
@@ -248,15 +310,12 @@ export const restoreFile = async (req, res) => {
 // DELETE /api/files/:id/permanent
 export const permanentDeleteFile = async (req, res) => {
   try {
-    const [file] = await sql`
-        SELECT * FROM files WHERE id = ${req.params.id} AMD owner_id = ${req.user.id}`;
-
-    if (!file) {
+    const deleted = await permanentDeleteFileRecord(req.params.id, req.user.id);
+    if (!deleted) {
       return res.status(404).json({ error: "File not Found!" });
     }
 
-    await permanentDeleteFileRecord(file, req.user.id);
-    returnres.status(200).json({ message: "File Permanently Deleted!" });
+    return res.status(200).json({ message: "File Permanently Deleted!" });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
